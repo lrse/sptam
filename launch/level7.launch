@@ -1,0 +1,89 @@
+<launch>
+
+  <!-- Set use_sim_time true for datasets-->
+  <param name="use_sim_time" value="true"/>
+
+  <group ns="stereo">
+
+    <!-- Call stereo_image_proc to undistort and rectify images -->
+    <node pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc"/>
+
+  </group>
+
+  <!-- Now we crop the images to remove black areas resulting from undistortion.
+   Both images must be cropped to the same size
+   because intrisic matrices must be of the same for both -->
+
+  <!-- Crop left image -->
+  <node pkg="nodelet" type="nodelet"
+        args="standalone image_proc/crop_decimate"
+        name="left_decimator">
+    <param name="x_offset" type="int" value="52" />
+    <param name="y_offset" type="int" value="51" />
+    <param name="width" type="int" value="1177" />
+    <param name="height" type="int" value="860" />
+
+    <!-- remap input topics -->
+    <remap from="camera/image_raw" to="/stereo/left/image_rect_color"/>
+    <remap from="camera/image_info" to="/stereo/left/camera_info"/>
+
+    <!-- remap output topics -->
+    <remap from="camera_out/image_raw" to="/stereo/left_crop/image_rect_color"/>
+    <remap from="camera_out/image_info" to="/stereo/left_crop/camera_info"/>
+  </node>
+
+  <!-- Crop right image -->
+  <node pkg="nodelet" type="nodelet"
+        args="standalone image_proc/crop_decimate"
+        name="right_decimator">
+    <param name="x_offset" type="int" value="52" />
+    <param name="y_offset" type="int" value="51" />
+    <param name="width" type="int" value="1177" />
+    <param name="height" type="int" value="860" />
+
+    <!-- remap input topics -->
+    <remap from="camera/image_raw" to="/stereo/right/image_rect_color"/>
+    <remap from="camera/image_info" to="/stereo/right/camera_info"/>
+
+    <!-- remap output topics -->
+    <remap from="camera_out/image_raw" to="/stereo/right_crop/image_rect_color"/>
+    <remap from="camera_out/image_info" to="/stereo/right_crop/camera_info"/>
+  </node>
+
+
+
+  <!-- Publish static transform between robot origin and left camera origin-->
+
+
+  <!-- static_transform_publisher                                                x y z yaw pitch roll frame_id child_frame_id period_in_ms -->
+  <node pkg="tf" type="static_transform_publisher" name="camera_broadcaster" args="-0.301772 0 0 0 0 0 camera_0 camera_1 100"/>
+
+  <!-- S-PTAM path publisher. Transforms poses into path. -->
+  <node pkg="ros_utils" type="pose_to_path" name="sptam_path">
+    <remap from="pose" to="sptam/robot/pose" />
+    <remap from="path" to="sptam/robot/path" />
+  </node>
+
+  <!-- Release -->
+  <node pkg="sptam" type="sptam_node" name="sptam" output="screen" >
+
+    <!-- Read S-PTAM parameters file -->
+    <rosparam command="load" file="$(find sptam)/configurationFiles/level7.yaml" />
+
+    <param name="approximate_sync" value="false" />
+    <param name="use_odometry" value="true"/>
+    <param name="odom_frame" value="odom_combined"/>
+    <param name="camera_frame" value="camera_1"/>  <!-- set left camera frame -->
+
+    <!-- Remap topics  -->
+    <remap from="/stereo/left/image_rect"  to="/stereo/left_crop/image_rect_color"/>
+    <remap from="/stereo/right/image_rect"  to="/stereo/right_crop/image_rect_color"/>
+    <remap from="/stereo/left/camera_info"  to="/stereo/left_crop/camera_info"/>
+    <remap from="/stereo/right/camera_info"  to="/stereo/right_crop/camera_info"/>
+
+    <!-- Remap Odometry message -->
+    <remap from="/robot/pose"  to="/odom"/>
+
+  </node>
+
+</launch>

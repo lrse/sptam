@@ -1,0 +1,44 @@
+<launch>
+
+  <!-- Set use_sim_time true for datasets-->
+  <param name="use_sim_time" value="true"/>
+
+  <!-- static_transform_publisher x y z yaw pitch roll frame_id child_frame_id period_in_ms -->
+  <node pkg="tf" type="static_transform_publisher" name="camera_broadcaster" args="0 0 0 0 0 0 base_link left_camera 30"/>
+
+  <!-- Ground Truth path publisher. Transforms poses into path. -->
+<!--  <node pkg="ros_utils" type="pose_to_path" name="gt_path">
+    <remap from="pose" to="robot/gt_pose" />
+    <remap from="path" to="ground_truth/path" />
+  </node>-->
+
+  <node pkg="ros_utils" type="pose_to_path" name="sptam_path">
+    <remap from="pose" to="sptam/robot/pose" />
+    <remap from="path" to="sptam/robot/path" />
+  </node>
+
+  <!-- Use motion model as odometry -->
+<!--
+  <node pkg="sptam" type="motion_model_node" name="motion_model" output="screen" >
+    <rosparam command="delete"/>
+  </node>
+-->
+
+  <!-- Release -->
+  <node pkg="sptam" type="sptam_node" name="sptam" output="screen" >
+
+    <!-- Read S-PTAM parameters file -->
+    <rosparam command="load" file="$(find sptam)/configurationFiles/kitti.yaml" />
+
+    <param name="approximate_sync" value="false" />
+    <param name="camera_frame" value="/left_camera"/>
+
+    <!-- Remap topics  -->
+    <remap from="/stereo/left/image_rect"  to="/kitti_stereo/left/image_rect"/>
+    <remap from="/stereo/right/image_rect"  to="/kitti_stereo/right/image_rect"/>
+    <remap from="/stereo/left/camera_info"  to="/kitti_stereo/left/camera_info"/>
+    <remap from="/stereo/right/camera_info"  to="/kitti_stereo/right/camera_info"/>
+
+  </node>
+
+</launch>

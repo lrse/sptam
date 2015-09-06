@@ -1,0 +1,45 @@
+<launch>
+
+  <!-- Set use_sim_time true for datasets-->
+  <param name="use_sim_time" value="true"/>
+
+  <!-- PR2 robot model (for visualization) -->
+<!--  <include file="$(find pr2_description)/robots/upload_pr2.launch" />-->
+
+  <group ns="wide_stereo">
+    <!-- Call stereo_image_proc to undistort and rectify images -->
+    <node pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc">
+      <remap from="/stereo/left/image_raw"  to="/wide_stereo/left/image_raw"/>
+      <remap from="/stereo/right/image_raw"  to="/wide_stereo/right/image_raw"/>
+      <remap from="/stereo/left/camera_info"  to="/wide_stereo/left/camera_info"/>
+      <remap from="/stereo/right/camera_info"  to="/wide_stereo/right/camera_info"/>
+    </node>
+  </group>
+
+  <!-- path publisher. Transforms poses into path. -->
+  <node pkg="ros_utils" type="pose_to_path" name="sptam_path">
+    <remap from="pose" to="sptam/robot/pose" />
+    <remap from="path" to="sptam/robot/path" />
+  </node>
+
+
+  <!-- Release -->
+  <node pkg="sptam" type="sptam_node" name="sptam" output="screen" >
+
+    <!-- Read S-PTAM parameters file -->
+    <rosparam command="load" file="$(find sptam)/configurationFiles/mit.yaml" />
+
+    <param name="approximate_sync" value="false" />
+    <param name="use_odometry" value="true"/>
+    <param name="odom_frame" value="/odom_combined"/>
+    <param name="camera_frame" value="/wide_stereo_gazebo_l_stereo_camera_optical_frame"/>
+
+    <!-- Remap topics  -->
+    <remap from="/stereo/left/image_rect"  to="/wide_stereo/left/image_rect_color"/>
+    <remap from="/stereo/right/image_rect"  to="/wide_stereo/right/image_rect_color"/>
+    <remap from="/stereo/left/camera_info"  to="/wide_stereo/left/camera_info"/>
+    <remap from="/stereo/right/camera_info"  to="/wide_stereo/right/camera_info"/>
+
+  </node>
+
+</launch>

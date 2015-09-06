@@ -1,0 +1,10 @@
+S-PTAM is released under a GPLv3 license (see COPYING.txt).
+
+For a closed-source version of S-PTAM for commercial purposes, please contact the authors.
+
+If you use S-PTAM in an academic work, please cite the most relevant publication associated by visiting:
+http://robotica.dc.uba.ar/index.php/publicaciones/?lang=en
+
+
+
+
