@@ -1,6 +1,10 @@
 S-PTAM is a Stereo SLAM system able to compute the camera trajectory in real-time. It heavily exploits the parallel nature of the SLAM problem, separating the time-constrained pose estimation from less pressing matters such as map building and refinement tasks. On the other hand, the stereo setting allows to reconstruct a metric 3D map for each frame of stereo images, improving the accuracy of the mapping process with respect to monocular SLAM and avoiding the well-known bootstrapping problem. Also, the real scale of the environment is an essential feature for robots which have to interact with their surrounding workspace.
 
-[TOC]
+<center>
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=kq9DG5PQ2k8
+" target="_blank"><img src="http://img.youtube.com/vi/kq9DG5PQ2k8/0.jpg" 
+alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a>
+</center>
 
 ## Related Publications:
 [1] Taihú Pire, Thomas Fischer, Javier Civera, Pablo De Cristóforis and Julio Jacobo Berlles.  
@@ -36,6 +40,11 @@ This site and the code provided here are under active development. Even though w
 
 We have tested S-PTAM in Ubuntu 14.04 with ROS Indigo.
 
+To install ROS (indigo) use the following command:
+
+`sudo apt-get install ros-indigo-desktop`
+
+
 ## g2o
 
 Install [g2o](https://openslam.org/g2o.html) library from the source code provided in  
@@ -67,7 +76,7 @@ Show the tracked frames by S-PTAM. Set it OFF to improve S-PTAM performance.
 
 # Turorials
 
-We provide some examples of how to run S-PTAM with the most populars stereo datasets
+We provide some examples of how to run S-PTAM with the most popular stereo datasets
 
 ## KITTI dataset
 
