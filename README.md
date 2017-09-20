@@ -19,7 +19,7 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
 
 - [License](#license)
 - [Disclaimer](#disclaimer)
-- [Prerequisites (dependencies)](#Prerequisites-(dependencies))
+- [Dependencies](#Dependencies)
 	- [ROS](#ros)
         - [ros-utils](#ros-utils)
 	- [g2o](#g2o)
@@ -92,7 +92,7 @@ If you use S-PTAM in an academic work, please cite:
 # Disclaimer
 This site and the code provided here are under active development. Even though we try to only release working high quality code, this version might still contain some issues. Please use it with caution.
 
-# Prerequisites (dependencies)
+# Dependencies
 
 ## ROS
 
@@ -102,7 +102,7 @@ To install ROS (Kinetic) use the following command:
 
 `sudo apt-get install ros-kinetic-desktop`
 
-## ros-utils (ROS package)
+## ros-utils
 
 Install our [ros-utils](https://github.com/lrse/ros-utils) library from the source code provided in  
 
