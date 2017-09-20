@@ -27,7 +27,7 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
       - [OpenGV](#opengv)
   - [Installation](#installation)
   - [ROS Package](#ros-package)
-  - [Compilation](#compilation)
+  - [ROS Compilation](#ros-compilation)
   - [Tutorials](#tutorials)
     - [KITTI dataset](#kitti-dataset)
     - [EuRoc MAV dataset](#euroc-mav-dataset)
@@ -38,8 +38,8 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
       - [Published Topics](#published-topics)
       - [ROS Parameters](#ros-parameters)
       - [Involved Coordinates Systems](#involved-coordinates-systems)
-  - [CMAKE flags](#CMAKE-flags)
-  - [S-PTAM Parameters](#s-ptam-Parameters)
+  - [CMAKE flags](#cmake-flags)
+  - [S-PTAM Parameters](#s-ptam-parameters)
   - [Standalone](#standalone)
     - [Compilation](#compilation)
     - [Run](#run)
@@ -152,7 +152,7 @@ Tested until commit [2e2d21917fd2fb75f2134e6d5be7a2536cbc7eb1](https://github.co
 
 # ROS Package
 
-## Compilation
+## ROS Compilation
 
 `catkin_make --pkg sptam -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSINGLE_THREAD=OFF -DSHOW_TRACKED_FRAMES=ON -DSHOW_PROFILING=ON -DPARALLELIZE=ON`
 
