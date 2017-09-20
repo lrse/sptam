@@ -40,9 +40,9 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
 		- [ROS Parameters](#rosParameters)
 		- [Involved Coordinates Systems](#coordinatesSystems)
 - [CMAKE flags](#cmakeFlags)
-- [S-PTAM Parameters](#parameters)
+- [S-PTAM Parameters](#S-PTAM Parameters)
 - [Standalone](#standalone)
-        - [Compilation](#)
+        - [Compilation](#compilation)
 	- [Run](#run)
 
 # License
