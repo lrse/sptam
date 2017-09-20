@@ -20,7 +20,7 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
 - [License](#license)
 - [Disclaimer](#disclaimer)
 - [Dependencies](#dependencies)
-	- [ROS](#ros)
+        - [ROS](#ros)
         - [ros-utils](#ros-utils)
 	- [g2o](#g2o)
         - [Loop Closure Dependencies](#loop-closure-dependencies)
@@ -167,7 +167,7 @@ For more information about compilation flags see [CMAKE flags](#cmakeFlags) sect
 
 We provide some examples of how to run S-PTAM with the most popular stereo datasets
 
-## KITTI dataset
+### KITTI dataset
 
 1. Download the KITTI rosbag [kitti_00.bag](http://www6.in.tum.de/~kloses/rvc/kitti_bags/kitti_00.bag) provided in   [KITTI rosbag files](http://www6.in.tum.de/~kloses/rvc/kitti_bags/)  
 
@@ -188,7 +188,7 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
 
     `roslaunch sptam kitti.launch`  
 
-## EuRoc MAV dataset
+### EuRoc MAV dataset
 
 1. Download the EuRoc rosbag [Machine Hall 01](http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/machine_hall/MH_01_easy/MH_01_easy.bag) provided in   [EuRoc MAV Web Page](http://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets)  
 
@@ -211,7 +211,7 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
 
     `roslaunch sptam euroc.launch`  
 
-## MIT Stata Center dataset
+### MIT Stata Center dataset
 
 1. Download the MIT Stata Center rosbag [2012-01-27-07-37-01.bag](http://infinity.csail.mit.edu/data/2012/2012-01-27-07-37-01.bag) provided in   [MIT Stata Center Web Page](http://projects.csail.mit.edu/stata/downloads.php)  
 
@@ -230,7 +230,7 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
     `roslaunch sptam mit.launch`  
 
 
-## Indoor Level 7 S-Block dataset
+### Indoor Level 7 S-Block dataset
 
 1. Download the Level7 rosbag [level07_20_05_12_trunc.bag (3747 Frame Subset)](https://wiki.qut.edu.au/display/cyphy/Indoor+Level+7+S-Block+Dataset) provided in [Indoor Level 7 S-Block Dataset Web Page](https://wiki.qut.edu.au/display/cyphy/Indoor+Level+7+S-Block+Dataset)  
 
@@ -444,5 +444,3 @@ Download the KITTI gray scale stereo images from [KITTI dataset](http://www.cvli
 `./sptam-stereo ../../sptam/configurationFiles/kitti.yaml ../../sptam/configurationFiles/kitti_cam_00_to_02_13_to_21.yaml <KITTI_dataset_path>/00/image_0/ <KITTI_dataset_path>/00/image_1/ dir --timestamps <KITTI_dataset_path>/00/times.txt`
 
 Note: in order to use the Loop Closure module in standalone version, you must indicate the vocabulary location path in `kitti.yaml` configuration file.
-
-
