@@ -15,8 +15,7 @@ Robotics and Autonomous Systems, 2017.
 **Stereo Parallel Tracking and Mapping for Robot Localization**  
 Proc. of The International Conference on Intelligent Robots and Systems (IROS), Hamburg, Germany, 2015.
 
-**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
-
+## Table of Contents
 - [License](#license)
 - [Disclaimer](#disclaimer)
 - [Dependencies](#dependencies)
@@ -33,12 +32,12 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
                 - [KITTI dataset](#kitti-dataset)
                 - [EuRoc MAV dataset](#euroc-mav-dataset)
                 - [MIT Stata Center dataset](#mit-stata-center-dataset)
-                - [Indoor Level 7 S-Block dataset](#Indoor-Level-7-S-Block-dataset)
-        - [Node Information](#Node-Information)
-                - [Subscribed Topics](#Subscribed-Topics)
-                - [Published Topics](#Published-Topics)
-                - [ROS Parameters](#ROS-Parameters)
-                - [Involved Coordinates Systems](#Involved-Coordinates-Systems)
+                - [Indoor Level 7 S-Block dataset](#indoor-level-7-s-block-dataset)
+        - [Node Information](#node-information)
+                - [Subscribed Topics](#subscribed-topics)
+                - [Published Topics](#published-topics)
+                - [ROS Parameters](#ros-parameters)
+                - [Involved Coordinates Systems](#involved-coordinates-systems)
 - [CMAKE flags](#CMAKE-flags)
 - [S-PTAM Parameters](#S-PTAM-Parameters)
 - [Standalone](#standalone)
