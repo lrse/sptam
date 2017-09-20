@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -28,20 +33,27 @@
 
 #include "Measurement.hpp"
 
-Measurement::Measurement(MapPoint* _mapPoint, const cv::Point2d& projection)
-  : mapPoint( _mapPoint ), projection_( projection )
-  , descriptor_( mapPoint->GetDescriptor() )
-{}
-
-Measurement::Measurement(MapPoint* mapPoint, const cv::Point2d& projection, const cv::Mat& descriptor)
-  : mapPoint( mapPoint ), projection_( projection )
+Measurement::Measurement(const Type& type, const Source& source, const cv::KeyPoint& keypoint, const cv::Mat& descriptor)
+  : keypoints_({ keypoint }), descriptors_({descriptor}),type_( type ), source_(source)
 {
-  descriptor.copyTo( descriptor_ );
+  // assert this is treated as a monocular measurement
+  assert( type != Measurement::STEREO );
 }
 
-std::ostream& operator << (std::ostream& os, const Measurement& measurement)
+Measurement::Measurement(const Source& source, const cv::KeyPoint& KeyPointLeft, const cv::Mat& descriptorLeft, const cv::KeyPoint& KeyPointRight, const cv::Mat& descriptorRight)
+  : keypoints_({ KeyPointLeft, KeyPointRight }), descriptors_({descriptorLeft, descriptorRight}) , type_( Measurement::STEREO ), source_(source)
+{ }
+
+Measurement::Measurement(const Type& type, const Source& source, const std::vector<cv::KeyPoint>& keypoints, const std::vector<cv::Mat>& descriptors)
+  : keypoints_(keypoints), type_(type), source_(source)
 {
-  return os << "id: "  << measurement.GetMapPointId()
-    << " point: "<< measurement.mapPoint->GetPosition()
-    << " proj: "  << measurement.GetProjection() << std::endl;
+  for(const auto& descriptor : descriptors)
+    descriptors_.push_back(descriptor); // cv::Mat is just a pointer, data is not being copied
+}
+
+Measurement::Measurement(const Measurement& measurement)
+  : keypoints_(measurement.GetKeypoints()), type_(measurement.GetType()), source_(measurement.GetSource())
+{
+  for(const auto& descriptor : measurement.GetDescriptors())
+    descriptors_.push_back(descriptor); // cv::Mat is just a pointer, data is not being copied
 }

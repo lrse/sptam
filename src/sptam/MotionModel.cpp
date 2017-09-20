@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -28,62 +33,114 @@
 
 #include "MotionModel.hpp"
 
-inline cv::Vec4d eigen2cv(const Eigen::Quaterniond& q)
-{
-  return cv::Vec4d( q.w(), q.x(), q.y(), q.z() );
-}
+MotionModel::MotionModel(const ros::Time& time, const Eigen::Vector3d& initialPosition, const Eigen::Quaterniond& initialOrientation, const Eigen::Matrix6d& initialCovariance)
+  : initialized_( false), last_update_( time )
+  , position_( initialPosition ), orientation_( initialOrientation ), poseCovariance_( initialCovariance )
+  , linearVelocity_( Eigen::Vector3d::Zero() ), angular_velocity_angle_( 0 ), angular_velocity_axis_(1, 0, 0)
+{}
 
-inline Eigen::Quaterniond cv2eigen(const cv::Vec4d& q)
-{
-  return Eigen::Quaterniond(q[0], q[1], q[2], q[3]);
-}
-
-MotionModel::MotionModel(const cv::Point3d& initialPosition, const cv::Vec4d& initialOrientation)
-  : position_( initialPosition ), linearVelocity_(0, 0, 0)
-{
-  orientation_ = cv2eigen( initialOrientation );
-  angularVelocity_ = cv2eigen( cv::Vec4d(1, 0, 0, 0) );
-}
-
-void MotionModel::CurrentCameraPose(cv::Point3d& currentPosition, cv::Vec4d& currentOrientation) const
+void MotionModel::currentPose(Eigen::Vector3d& currentPosition, Eigen::Quaterniond& currentOrientation, Eigen::Matrix6d& covariance) const
 {
   currentPosition = position_;
-  currentOrientation = eigen2cv( orientation_ );
+  currentOrientation = orientation_;
+  covariance = poseCovariance_;
 }
 
-void MotionModel::PredictNextCameraPose(cv::Point3d& predictedPosition, cv::Vec4d& predictedOrientation) const
+void MotionModel::predictPose(const ros::Time& time, Eigen::Vector3d& predictedPosition, Eigen::Quaterniond& predictedOrientation, Eigen::Matrix6d& predictionCovariance)
 {
-  // Compute predicted position by integrating linear velocity
+  // until the first update dt may not make sense. In any case,
+  // the velocity is 0, so just return the initial pose.
+  if ( not initialized_ )
+  {
+    predictedPosition = position_;
+    predictedOrientation = orientation_;
+    predictionCovariance = poseCovariance_;
 
-  predictedPosition = position_ + cv::Point3d( linearVelocity_ );
+    return;
+  }
+
+  double dt = (time - last_update_).toSec();
+  assert(0 <= dt);
+
+  // Compute predicted position by integrating linear velocity
+  predictedPosition = position_ + linearVelocity_ * dt;
 
   // Compute predicted orientation by integrating angular velocity
 
-  Eigen::Quaterniond predictedOrientation_e = orientation_ * angularVelocity_;
-  predictedOrientation_e.normalize();
-  predictedOrientation = eigen2cv( predictedOrientation_e );
+  //std::cout << "angle: " << angular_velocity_angle_ * dt << std::endl;
+  //std::cout << "axis: " << angular_velocity_axis_ << std::endl;
+  Eigen::Quaterniond delta_orientation( Eigen::AngleAxisd( angular_velocity_angle_ * dt, angular_velocity_axis_ ) );
+
+  predictedOrientation = orientation_ * delta_orientation;
+  predictedOrientation.normalize();
+
+  predictionCovariance = poseCovariance_;
 }
 
 // update the camera state given a new camera pose
-void MotionModel::UpdateCameraPose(const cv::Point3d& newPosition, const cv::Vec4d& newOrientation)
+void MotionModel::updatePose(const ros::Time& time, const Eigen::Vector3d& newPosition, const Eigen::Quaterniond& newOrientation, const Eigen::Matrix6d& covariance)
 {
-  // Compute linear velocity
-  cv::Vec3d newLinearVelocity( newPosition - position_ );
-  // In order to be robust against fast camera movements linear velocity is smoothed over time
-  newLinearVelocity = (newLinearVelocity + linearVelocity_) * 0.5;
+  if ( initialized_ )
+  {
+    double dt = (time - last_update_).toSec();
+    assert(0 < dt);
 
-  // compute rotation between q1 and q2: q2 * qInverse(q1);
-  Eigen::Quaterniond newAngularVelocity = cv2eigen( newOrientation ) * orientation_.inverse();
+    // Compute linear velocity
+    //std::cout << "new position: " << newPosition << " " << position_ << " " << dt << std::endl;
+    Eigen::Vector3d new_linear_velocity( (newPosition - position_) / dt );
 
-  // In order to be robust against fast camera movements angular velocity is smoothed over time
-  newAngularVelocity = newAngularVelocity.slerp(0.5, angularVelocity_);
+    // compute rotation between q1 and q2: q2 * qInverse( q1 )
+    // and save in angle axis representation
+    Eigen::Quaterniond delta_orientation_q = newOrientation * orientation_.inverse();
+    delta_orientation_q.normalize();
 
-  newAngularVelocity.normalize();
+    Eigen::AngleAxisd delta_orientation( delta_orientation_q );
+
+    angular_velocity_axis_ = delta_orientation.axis();
+    double ang = delta_orientation.angle();
+
+    /* angle axis can return the rotation in the opposite direction by flipping the axis and giving an angle bigger than PI. in that case
+     * the angle is to be interpreted as a negative rotation, thus this correction is needed and also the axis is to be flipped back */
+    if (ang > M_PI)
+    {
+      ang = 2 * M_PI - ang;
+      angular_velocity_axis_ *= -1;
+    }
+    angular_velocity_angle_ = ang / dt;
+    //std::cout << "angular velocity (angle): " << delta_orientation.angle() << " " << angular_velocity_angle_ << " " << ang << " " << dt << std::endl;
+    //std::cout << "axis: " << angular_velocity_axis_ << std::endl;
+
+    // Update the velocity state variables
+    linearVelocity_ = new_linear_velocity;
+    //std::cout << "linear velocity: " << linearVelocity_;
+  }
 
   // Update the current state variables
 
+  last_update_ = time;
+
   position_ = newPosition;
-  orientation_ = cv2eigen( newOrientation );
-  linearVelocity_ = newLinearVelocity;
-  angularVelocity_ = newAngularVelocity;
+  orientation_ = newOrientation;
+  poseCovariance_ = covariance;
+
+  initialized_ = true;
+}
+
+void MotionModel::applyCorrection(const Eigen::Matrix4d& corr)
+{
+  Eigen::Isometry3d correction(corr);
+  
+  Eigen::Isometry3d current;
+  current.linear() = orientation_.toRotationMatrix();
+  current.translation() = position_;
+  
+  current = current * correction; // applying correction
+  
+  // Resetting the pose
+  position_ = current.translation();
+  orientation_ = Eigen::Quaterniond(current.linear());
+  
+  // Rotating velocity vectors
+  linearVelocity_ = correction.linear().inverse() * linearVelocity_;
+  angular_velocity_axis_ = correction.linear().inverse() * angular_velocity_axis_;
 }

@@ -1,0 +1,39 @@
+FeatureDetector:
+
+  Name: 'GFTT'
+
+  nfeatures: 2000
+  minDistance: 15.0
+  qualityLevel: 0.01
+  useHarrisDetector: false
+
+DescriptorExtractor:
+  Name: 'BRISK'
+  # OpenCV2
+  # orientationNormalized: 'true'
+  # scaleNormalized: 'true'
+  # patternScale: '22.0'
+
+  # OpenCV3
+  # thresh: '30'
+  # octaves: '3'
+  # patternScale: '1.0'
+
+
+DescriptorMatcher:
+  # normType: use
+  #  - NORM_L1 or NORM_L2 for SIFT and SURF descriptors
+  #  - NORM_HAMMING for ORB, BRISK, and BRIEF
+  #  - NORM_HAMMING2 should be used with ORB when WTA_K==3 or 4
+  Name: 'BruteForce-Hamming'
+  crossCheck: false
+
+MatchingCellSize: 15
+MatchingNeighborhood: 2
+MatchingDistance: 100
+EpipolarDistance: 0
+FrustumNearPlaneDist: 0.1
+FrustumFarPlaneDist: 10000.0
+BundleAdjustmentActiveKeyframes: 10
+
+LoopDetectorVocabulary: 'SPTAM_PATH/bow_voc/DBoW2/brief_mit_malaga_vocabulary.yml.gz'

@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,35 +20,56 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
-
 #include "Camera.hpp"
+
+inline FrustumCulling computeFrustum(const CameraPose& pose, const CameraParameters& calibration)
+{
+  return FrustumCulling(
+    pose.GetPosition(), pose.GetOrientationQuaternion(),
+    calibration.horizontalFov(), calibration.verticalFov(),
+    calibration.frustumNearPlaneDistance(), calibration.frustumFarPlaneDistance()
+  );
+}
+
+inline cv::Matx34d computeTransformation(const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation)
+{
+  // R = O'
+  const Eigen::Matrix3d rotationMatrix = orientation.transpose();
+
+  // t = -R * C where C is the camera position
+  const Eigen::Vector3d translation = -rotationMatrix * position;
+
+  return cv::Matx34d(
+    rotationMatrix(0, 0), rotationMatrix(0, 1), rotationMatrix(0, 2), translation[0],
+    rotationMatrix(1, 0), rotationMatrix(1, 1), rotationMatrix(1, 2), translation[1],
+    rotationMatrix(2, 0), rotationMatrix(2, 1), rotationMatrix(2, 2), translation[2]
+  );
+}
 
 Camera::Camera(const CameraPose& pose, const CameraParameters& calibration)
   : pose_( pose ), calibration_( calibration )
-  , frustum_(
-      pose_,
-      calibration.horizontalFOV, calibration.verticalFOV,
-      calibration.frustumNearPlaneDist, calibration.frustumFarPlaneDist
-    )
+  , transformation_( computeTransformation( pose_.GetPosition(), pose_.GetOrientationMatrix() ) )
+  , projection_( calibration_.intrinsic() * transformation_ )
+  , frustum_( computeFrustum( pose, calibration ) )
 {}
 
 void Camera::UpdatePose(const CameraPose& newPose)
 {
   pose_ = newPose;
 
-  frustum_ = FrustumCulling(
-    pose_,
-    calibration_.horizontalFOV, calibration_.verticalFOV,
-    calibration_.frustumNearPlaneDist, calibration_.frustumFarPlaneDist
-  );
+  frustum_ = computeFrustum( pose_, calibration_ );
+  transformation_ = computeTransformation( pose_.GetPosition(), pose_.GetOrientationMatrix() );
+  projection_ = calibration_.intrinsic() * transformation_;
 }
 
 std::ostream& operator << ( std::ostream& os, const Camera& camera)

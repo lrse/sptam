@@ -1,0 +1,3 @@
+[submodule "bow_voc"]
+	path = bow_voc
+	url = https://github.com/lrse/bow_vocabularies.git

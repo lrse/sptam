@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,8 +32,14 @@
  */
 #pragma once
 
-#include <opencv2/core/core.hpp>
-#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/core/version.hpp>
+#if CV_MAJOR_VERSION == 2
+  #include <opencv2/core/core.hpp>
+  #include <opencv2/features2d/features2d.hpp>
+#elif CV_MAJOR_VERSION == 3
+  #include <opencv2/core.hpp>
+  #include <opencv2/xfeatures2d.hpp>
+#endif
 
 /**
  * Class to execute extract features in parallel

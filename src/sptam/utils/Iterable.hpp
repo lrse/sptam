@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -108,10 +113,6 @@ class ConstIteratorBase
 		virtual bool equal(const ConstIteratorBase& other) const = 0;
 };
 
-// forward declaration
-//~ template<typename E>
-//~ class ConstIterator;
-
 /**
  * This class will be used as the abstract iterator interface
  * Internally it stores a pointer to a interface-compliant
@@ -127,7 +128,7 @@ class Iterator {
 			it_iml_ptr_ = std::move( it_ptr );
 		}
 
-		Iterator(const Iterator& other)
+		Iterator(const Iterator<E>& other)
 			: it_iml_ptr_( other.it_iml_ptr_->clone() )
 		{}
 
@@ -360,432 +361,235 @@ class ConstIterable
 };
 
 ////////////////////////////////////////////////////////////////////////
-// std::list iterator implementation
+// preprocessor macro for generic containers
 ////////////////////////////////////////////////////////////////////////
 
-template<typename E>
-class ListIterator : public IteratorBase<E>
-{
-	public:
+#define CONCAT(x, y) x ## y
 
-		ListIterator(typename std::list<E>::iterator it)
-			: it_( it )
-		{}
-
-		virtual void operator ++ ()
-		{
-			it_++;
-		}
-
-		virtual void operator ++ (int i)
-		{
-			it_++(i);
-		}
-
-		virtual E& operator * ()
-		{
-			return *it_;
-		}
-
-		const virtual E& operator * () const
-		{
-			return *it_;
-		}
-
-		virtual IteratorBase<E>* clone() const
-		{
-			return new ListIterator( it_ );
-		}
-
-	protected:
-
-		virtual bool equal(const IteratorBase<E>& other) const
-		{
-			return it_ == ((ListIterator&)other).it_;
-		}
-
-	private:
-
-		typename std::list<E>::iterator it_;
+#define DEFINE_ITERATOR( PREFIX, CONTAINER ) \
+template<typename E> \
+class PREFIX ## Iterator : public IteratorBase<E> \
+{ \
+	public: \
+\
+		PREFIX ## Iterator(typename CONTAINER<E>::iterator it) \
+			: it_( it ) \
+		{} \
+\
+		virtual void operator ++ () \
+		{ it_++; } \
+\
+		virtual void operator ++ (int i) \
+		{ assert( false ); } \
+\
+		virtual E& operator * () \
+		{ return *it_; } \
+\
+		const virtual E& operator * () const \
+		{ return *it_; } \
+\
+		virtual IteratorBase<E>* clone() const \
+		{ return new PREFIX ## Iterator( it_ ); } \
+\
+	protected: \
+\
+		virtual bool equal(const IteratorBase<E>& other) const \
+		{ return it_ == ((PREFIX ## Iterator&)other).it_; } \
+\
+	private: \
+\
+		typename CONTAINER<E>::iterator it_; \
 };
 
-template<typename E>
-class ConstListIterator : public ConstIteratorBase<E>
-{
-	public:
-
-		ConstListIterator(typename std::list<E>::const_iterator it)
-			: it_( it )
-		{}
-
-		virtual void operator ++ ()
-		{
-			it_++;
-		}
-
-		virtual void operator ++ (int i)
-		{
-			assert( false );
-		}
-
-		const virtual E& operator * () const
-		{
-			return *it_;
-		}
-
-	protected:
-
-		virtual bool equal(const ConstIteratorBase<E>& other) const
-		{
-			return it_ == ((ConstListIterator&)other).it_;
-		}
-
-		virtual ConstIteratorBase<E>* clone() const
-		{
-			return new ConstListIterator( it_ );
-		}
-
-	private:
-
-		typename std::list<E>::const_iterator it_;
+#define DEFINE_CONST_ITERATOR( PREFIX, CONTAINER ) \
+template<typename E> \
+class Const ## PREFIX ## Iterator : public ConstIteratorBase<E> \
+{ \
+	public: \
+ \
+		Const ## PREFIX ## Iterator(typename CONTAINER<E>::const_iterator it) \
+			: it_( it ) \
+		{} \
+ \
+		virtual void operator ++ () \
+		{ it_++; } \
+ \
+		virtual void operator ++ (int i) \
+		{ assert( false ); } \
+ \
+		const virtual E& operator * () const \
+		{ return *it_; } \
+ \
+	protected: \
+ \
+		virtual bool equal(const ConstIteratorBase<E>& other) const \
+		{ \
+			return it_ == ((Const ## PREFIX ## Iterator&)other).it_; \
+		} \
+ \
+		virtual ConstIteratorBase<E>* clone() const \
+		{ \
+			return new Const ## PREFIX ## Iterator( it_ ); \
+		} \
+ \
+	private: \
+ \
+		typename CONTAINER<E>::const_iterator it_; \
 };
 
-template<typename E>
-class ListIterable : public IterableBase<E>
-{
-  public:
-
-    virtual Iterator<E> begin()
-    {
-			return Iterator<E>( ListIterator<E>( list_.begin() ) );
-		}
-
-		virtual ConstIterator<E> begin() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstListIterator<E>( list_.begin() ) ));
-		}
-
-    virtual Iterator<E> end()
-    {
-			return Iterator<E>( ListIterator<E>( list_.end() ) );
-		}
-
-		virtual ConstIterator<E> end() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstListIterator<E>( list_.end() ) ));
-		}
-
-		virtual bool empty() const
-		{
-			return list_.empty();
-		}
-
-		virtual size_t size() const
-		{
-			return list_.size();
-		}
-
-    static Iterable<E> from( const std::list<E>& list )
-    {
-			return Iterable<E>( std::unique_ptr< IterableBase<E> >( new ListIterable<E>( list ) ) );
-		}
-
-  protected:
-
-    ListIterable( std::list<E>& list ) : list_( list )
-		{}
-
-    std::list<E>& list_;
+#define DEFINE_ITERABLE( PREFIX, CONTAINER ) \
+template<typename E> \
+class PREFIX ## Iterable : public IterableBase<E> \
+{ \
+  public: \
+ \
+    virtual Iterator<E> begin() \
+    { \
+			return Iterator<E>( std::unique_ptr< PREFIX ## Iterator<E> >( new PREFIX ## Iterator<E>( container_.begin() ) ) ); \
+		} \
+ \
+		virtual ConstIterator<E> begin() const \
+		{ \
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new Const ## PREFIX ## Iterator<E>( container_.begin() ) )); \
+		} \
+ \
+    virtual Iterator<E> end() \
+    { \
+			return Iterator<E>( std::unique_ptr< PREFIX ## Iterator<E> >( new PREFIX ## Iterator<E>( container_.end() ) ) ); \
+		} \
+ \
+		virtual ConstIterator<E> end() const \
+		{ \
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new Const ## PREFIX ## Iterator<E>( container_.end() ) )); \
+		} \
+ \
+		virtual bool empty() const \
+		{ return container_.empty(); } \
+ \
+		virtual size_t size() const \
+		{ return container_.size(); } \
+ \
+    static Iterable<E> from( CONTAINER<E>& container ) \
+    { \
+			return Iterable<E>( std::unique_ptr< IterableBase<E> >( new PREFIX ## Iterable<E>( container ) ) ); \
+		} \
+ \
+  protected: \
+ \
+    PREFIX ## Iterable( CONTAINER<E>& container ) : container_( container ) \
+		{} \
+ \
+    CONTAINER<E>& container_; \
 };
 
-template<typename E>
-class ConstListIterable : public ConstIterableBase<E>
-{
-  public:
-
-		virtual ConstIterator<E> begin() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstListIterator<E>( list_.begin() ) ));
-		}
-
-		virtual ConstIterator<E> end() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstListIterator<E>( list_.end() ) ));
-		}
-
-		virtual bool empty() const
-		{
-			return list_.empty();
-		}
-
-		virtual size_t size() const
-		{
-			return list_.size();
-		}
-
-    static ConstIterable<E> from( const std::list<E>& list )
-    {
-			return ConstIterable<E>( std::unique_ptr< ConstIterableBase<E> >( new ConstListIterable<E>( list ) ) );
-		}
-
-  protected:
-
-    ConstListIterable( const std::list<E>& list ) : list_( list )
-		{}
-
-    const std::list<E>& list_;
+#define DEFINE_CONST_ITERABLE( PREFIX, CONTAINER ) \
+template<typename E> \
+class Const ## PREFIX ## Iterable : public ConstIterableBase<E> \
+{ \
+  public: \
+ \
+		virtual ConstIterator<E> begin() const \
+		{ \
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new Const ## PREFIX ## Iterator<E>( container_.begin() ) )); \
+		} \
+ \
+		virtual ConstIterator<E> end() const \
+		{ \
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new Const ## PREFIX ## Iterator<E>( container_.end() ) )); \
+		} \
+ \
+		virtual bool empty() const \
+		{ return container_.empty(); } \
+ \
+		virtual size_t size() const \
+		{ return container_.size(); } \
+ \
+    static ConstIterable<E> from( const CONTAINER<E>& container ) \
+    { \
+			return ConstIterable<E>( std::unique_ptr< ConstIterableBase<E> >( new Const ## PREFIX ## Iterable<E>( container ) ) ); \
+		} \
+ \
+  protected: \
+ \
+    Const ## PREFIX ## Iterable( const CONTAINER<E>& container ) : container_( container ) \
+		{} \
+ \
+    const CONTAINER<E>& container_; \
 };
 
 ////////////////////////////////////////////////////////////////////////
-// std::vector iterator implementation
+// std::list<E> iterator implementation
 ////////////////////////////////////////////////////////////////////////
 
-template<typename E>
-class VectorIterator : public IteratorBase<E>
-{
-	public:
-
-		VectorIterator(typename std::vector<E>::iterator it)
-			: it_( it )
-		{}
-
-		virtual void operator ++ ()
-		{
-			it_++;
-		}
-
-		virtual void operator ++ (int i)
-		{
-			it_++(i);
-		}
-
-		virtual E& operator * ()
-		{
-			return *it_;
-		}
-
-		const virtual E& operator * () const
-		{
-			return *it_;
-		}
-
-		virtual IteratorBase<E>* clone() const
-		{
-			return new VectorIterator( it_ );
-		}
-
-	protected:
-
-		virtual bool equal(const IteratorBase<E>& other) const
-		{
-			return it_ == ((VectorIterator&)other).it_;
-		}
-
-	private:
-
-		typename std::vector<E>::iterator it_;
-};
-
-template<typename E>
-class ConstVectorIterator : public ConstIteratorBase<E>
-{
-	public:
-
-		ConstVectorIterator(typename std::vector<E>::const_iterator it)
-			: it_( it )
-		{}
-
-		virtual void operator ++ ()
-		{
-			it_++;
-		}
-
-		virtual void operator ++ (int i)
-		{
-			assert( false );
-		}
-
-		const virtual E& operator * () const
-		{
-			return *it_;
-		}
-
-	protected:
-
-		virtual bool equal(const ConstIteratorBase<E>& other) const
-		{
-			return it_ == ((ConstVectorIterator&)other).it_;
-		}
-
-		virtual ConstIteratorBase<E>* clone() const
-		{
-			return new ConstVectorIterator( it_ );
-		}
-
-	private:
-
-		typename std::vector<E>::const_iterator it_;
-};
-
-template<typename E>
-class VectorIterable : public IterableBase<E>
-{
-  public:
-
-    virtual Iterator<E> begin()
-    {
-			return Iterator<E>( VectorIterator<E>( vector_.begin() ) );
-		}
-
-		virtual ConstIterator<E> begin() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstVectorIterator<E>( vector_.begin() ) ));
-		}
-
-    virtual Iterator<E> end()
-    {
-			return Iterator<E>( VectorIterator<E>( vector_.end() ) );
-		}
-
-		virtual ConstIterator<E> end() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstVectorIterator<E>( vector_.end() ) ));
-		}
-
-		virtual bool empty() const
-		{
-			return vector_.empty();
-		}
-
-		virtual size_t size() const
-		{
-			return vector_.size();
-		}
-
-    static Iterable<E> from( const std::vector<E>& vector )
-    {
-			return Iterable<E>( std::unique_ptr< IterableBase<E> >( new VectorIterable<E>( vector ) ) );
-		}
-
-  protected:
-
-    VectorIterable( std::vector<E>& vector ) : vector_( vector )
-		{}
-
-    std::vector<E>& vector_;
-};
-
-template<typename E>
-class ConstVectorIterable : public ConstIterableBase<E>
-{
-  public:
-
-		virtual ConstIterator<E> begin() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstVectorIterator<E>( vector_.begin() ) ));
-		}
-
-		virtual ConstIterator<E> end() const
-		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstVectorIterator<E>( vector_.end() ) ));
-		}
-
-		virtual bool empty() const
-		{
-			return vector_.empty();
-		}
-
-		virtual size_t size() const
-		{
-			return vector_.size();
-		}
-
-    static ConstIterable<E> from( const std::vector<E>& vector )
-    {
-			return ConstIterable<E>( std::unique_ptr< ConstIterableBase<E> >( new ConstVectorIterable<E>( vector ) ) );
-		}
-
-  protected:
-
-    ConstVectorIterable( const std::vector<E>& vector ) : vector_( vector )
-		{}
-
-    const std::vector<E>& vector_;
-};
+DEFINE_ITERATOR( List, std::list )
+DEFINE_CONST_ITERATOR( List, std::list )
+DEFINE_ITERABLE( List, std::list )
+DEFINE_CONST_ITERABLE( List, std::list )
 
 ////////////////////////////////////////////////////////////////////////
-// std::set iterator implementation
+// std::vector<E> iterator implementation
 ////////////////////////////////////////////////////////////////////////
 
-template<typename E>
+DEFINE_ITERATOR( Vector, std::vector )
+DEFINE_CONST_ITERATOR( Vector, std::vector )
+DEFINE_ITERABLE( Vector, std::vector )
+DEFINE_CONST_ITERABLE( Vector, std::vector )
+
+////////////////////////////////////////////////////////////////////////
+// std::set<E> iterator implementation
+////////////////////////////////////////////////////////////////////////
+
+/*template<typename E, typename CMP>
 class SetIterator : public IteratorBase<E>
 {
 	public:
 
-		SetIterator(typename std::set<E>::iterator it)
+		SetIterator(typename std::set<E, CMP>::iterator it)
 			: it_( it )
 		{}
 
 		virtual void operator ++ ()
-		{
-			it_++;
-		}
+		{ it_++; }
 
 		virtual void operator ++ (int i)
-		{
-			it_++(i);
-		}
+		{ assert( false ); }
 
 		virtual E& operator * ()
-		{
-			return *it_;
-		}
+		{ return *it_; }
 
 		const virtual E& operator * () const
-		{
-			return *it_;
-		}
+		{ return *it_; }
 
 		virtual IteratorBase<E>* clone() const
-		{
-			return new SetIterator( it_ );
-		}
+		{ return new SetIterator( it_ ); }
 
 	protected:
 
 		virtual bool equal(const IteratorBase<E>& other) const
-		{
-			return it_ == ((SetIterator&)other).it_;
-		}
+		{ return it_ == ((SetIterator&)other).it_; }
 
 	private:
 
-		typename std::set<E>::iterator it_;
-};
+		typename std::set<E, CMP>::iterator it_;
+};*/
 
-template<typename E>
+template<typename E, typename CMP>
 class ConstSetIterator : public ConstIteratorBase<E>
 {
 	public:
 
-		ConstSetIterator(typename std::set<E>::const_iterator it)
+		ConstSetIterator(typename std::set<E, CMP>::const_iterator it)
 			: it_( it )
 		{}
 
 		virtual void operator ++ ()
-		{
-			it_++;
-		}
+		{ it_++; }
 
 		virtual void operator ++ (int i)
-		{
-			assert( false );
-		}
+		{ assert( false ); }
 
 		const virtual E& operator * () const
-		{
-			return *it_;
-		}
+		{ return *it_; }
 
 	protected:
 
@@ -801,97 +605,94 @@ class ConstSetIterator : public ConstIteratorBase<E>
 
 	private:
 
-		typename std::set<E>::const_iterator it_;
+		typename std::set<E, CMP>::const_iterator it_;
 };
 
-template<typename E>
+/*template<typename E, typename CMP>
 class SetIterable : public IterableBase<E>
 {
   public:
 
     virtual Iterator<E> begin()
     {
-			return Iterator<E>( SetIterator<E>( set_.begin() ) );
+			return Iterator<E>( std::unique_ptr< SetIterator<E, CMP> >( new SetIterator<E, CMP>( container_.begin() ) ) );
 		}
 
 		virtual ConstIterator<E> begin() const
 		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E>( set_.begin() ) ));
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E, CMP>( container_.begin() ) ));
 		}
 
     virtual Iterator<E> end()
     {
-			return Iterator<E>( SetIterator<E>( set_.end() ) );
+			return Iterator<E>( std::unique_ptr< SetIterator<E, CMP> >( new SetIterator<E, CMP>( container_.end() ) ) );
 		}
 
 		virtual ConstIterator<E> end() const
 		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E>( set_.end() ) ));
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E, CMP>( container_.end() ) ));
 		}
 
 		virtual bool empty() const
-		{
-			return set_.empty();
-		}
+		{ return container_.empty(); }
 
 		virtual size_t size() const
-		{
-			return set_.size();
-		}
+		{ return container_.size(); }
 
-    static Iterable<E> from( const std::set<E>& set )
+    static Iterable<E> from( std::set<E, CMP>& container )
     {
-			return Iterable<E>( std::unique_ptr< IterableBase<E> >( new SetIterable<E>( set ) ) );
+			return Iterable<E>( std::unique_ptr< IterableBase<E> >( new SetIterable<E, CMP>( container ) ) );
 		}
 
   protected:
 
-    SetIterable( std::set<E>& set ) : set_( set )
+    SetIterable( std::set<E, CMP>& container ) : container_( container )
 		{}
 
-    std::set<E>& set_;
-};
+    std::set<E, CMP>& container_;
+};*/
 
-template<typename E>
+template<typename E, typename CMP>
 class ConstSetIterable : public ConstIterableBase<E>
 {
   public:
 
 		virtual ConstIterator<E> begin() const
 		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E>( set_.begin() ) ));
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E, CMP>( container_.begin() ) ));
 		}
 
 		virtual ConstIterator<E> end() const
 		{
-			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E>( set_.end() ) ));
+			return ConstIterator<E>(std::unique_ptr< ConstIteratorBase<E> >( new ConstSetIterator<E, CMP>( container_.end() ) ));
 		}
 
 		virtual bool empty() const
-		{
-			return set_.empty();
-		}
+		{ return container_.empty(); }
 
 		virtual size_t size() const
-		{
-			return set_.size();
-		}
+		{ return container_.size(); }
 
-    static ConstIterable<E> from( const std::set<E>& set )
+    static ConstIterable<E> from( const std::set<E, CMP>& container )
     {
-			return ConstIterable<E>( std::unique_ptr< ConstIterableBase<E> >( new ConstSetIterable<E>( set ) ) );
+			return ConstIterable<E>( std::unique_ptr< ConstIterableBase<E> >( new ConstSetIterable<E, CMP>( container ) ) );
 		}
 
   protected:
 
-    ConstSetIterable( const std::set<E>& set ) : set_( set )
+    ConstSetIterable( const std::set<E, CMP>& container ) : container_( container )
 		{}
 
-    const std::set<E>& set_;
+    const std::set<E, CMP>& container_;
 };
 
+//~ DEFINE_ITERATOR( Set, std::set )
+//~ DEFINE_CONST_ITERATOR( Set, std::set )
+//~ DEFINE_ITERABLE( Set, std::set )
+//~ DEFINE_CONST_ITERABLE( Set, std::set )
+
 ////////////////////////////////////////////////////////////////////////
-// std::map key-iterator implementation
+// std::map<K,V> key-iterator implementation
 ////////////////////////////////////////////////////////////////////////
 
 template<typename K, typename V>
@@ -1068,7 +869,7 @@ class ConstMapKeyIterable : public ConstIterableBase<K>
 };
 
 ////////////////////////////////////////////////////////////////////////
-// std::map value-iterator implementation
+// std::map<K,V> value-iterator implementation
 ////////////////////////////////////////////////////////////////////////
 
 template<typename K, typename V>

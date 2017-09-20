@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,83 +32,57 @@
  */
 #pragma once
 
-#include "MapPoint.hpp"
-
-// TODO cambiarle el nombre a esto cuando desaparezca Measurement
-struct MEAS
-{
-  // measured position in image frame
-  cv::Point2d projection;
-
-  // descriptor describing the feature
-  cv::Mat descriptor;
-
-  // performance values
-  double distance;
-
-  // index of measured point
-  // TODO sacar esto de acá y devolver pair<idx, MEAS> donde sea necesario
-  int index;
-};
+#include <vector>
+#include <opencv2/opencv.hpp>
 
 class Measurement
 {
   public:
 
-    /**
-     * TODO esto existe solo porque bool StereoFrame::GetMeasurement(...)
-     * toma un measurement como output parameter.
-     * Ver si se puede cambiar eso.
-     */
-    Measurement(){}
+    // Possible measurement type
+    typedef enum { STEREO, LEFT, RIGHT } Type;
 
-    /**
-     * The measurement descriptor is a reference to the MapPoint one.
-     */
-    Measurement(MapPoint* mapPoint, const cv::Point2d& projection);
+    // Possible measurement sources
+    typedef enum { SRC_TRIANGULATION, SRC_TRACKER, SRC_REFIND } Source;
 
-    /**
-     * The measurement descriptor is copied internally.
-     */
-    Measurement(MapPoint* mapPoint, const cv::Point2d& projection, const cv::Mat& descriptor);
+  public:
 
-    // MapPoint Id
-    inline int GetMapPointId() const
-    { return mapPoint->GetId(); }
+    Measurement(const Type& type, const Source& source, const cv::KeyPoint& keypoint, const cv::Mat& descriptor);
 
-    inline const cv::Point2d& GetProjection() const
-    { return projection_; }
+    Measurement(const Source& source, const cv::KeyPoint& KeyPointLeft, const cv::Mat& descriptorLeft, const cv::KeyPoint& KeyPointRight, const cv::Mat& descriptorRight);
 
-    // MapPoint descriptor
+    Measurement(const Type& type, const Source& source, const std::vector<cv::KeyPoint>& keyPoints, const std::vector<cv::Mat>& descriptors);
+
+    Measurement(const Measurement& measurement);
+
+    inline const std::vector<cv::KeyPoint>& GetKeypoints() const
+    { return keypoints_; }
+
     inline const cv::Mat& GetDescriptor() const
-    { return descriptor_; }
+    { return descriptors_[0]; }
 
-    // MapPoint asociado (este puntero es redundante dado que el KeyFrame tiene esta informacion).
-    // El problema es que necesitaba acceso al punto durante al actualizacion de la camra en el tracking
-    MapPoint* mapPoint;
+    inline const std::vector<cv::Mat>& GetDescriptors() const
+    { return descriptors_; }
+
+    inline const Type& GetType() const
+    { return type_; }
+
+    inline const Source& GetSource() const
+    { return source_; }
+
+    const cv::KeyPoint& GetMainKeypoint(void) const
+    { return keypoints_[0]; }
 
   private:
 
     // Image feature position
-    cv::Point2d projection_;
+    std::vector<cv::KeyPoint> keypoints_;
 
     // Image feature descriptor
-    cv::Mat descriptor_;
+    // Data is not being copied, those cv::Mat are used as pointers. Don't pass temporary data!
+    std::vector<cv::Mat> descriptors_;
 
-  public:
+    Type type_;
 
-    // Possible measurement sources
-    typedef enum { SRC_TRIANGULATION, SRC_TRACKER, SRC_REFIND } Source_t;
-
-    // Where did this measurement come from?
-    Source_t source;
+    Source source_;
 };
-
-// What is the scale of a level?
-inline int LevelScale(int nLevel)
-{
-  // is the same that use 2^nLevel
-  return 1 << nLevel;
-}
-
-std::ostream& operator << (std::ostream& os, const Measurement& measurement);

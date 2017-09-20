@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,55 +32,50 @@
  */
 #pragma once
 
+#include "Match.hpp"
 #include "CameraPose.hpp"
 #include "Measurement.hpp"
+#include "g2o_driver.hpp"
 
 #include <g2o/core/sparse_optimizer.h>
+
+namespace Eigen
+{
+  typedef Matrix<double, 6, 6> Matrix6d;
+}
 
 class tracker_g2o
 {
   public:
-    tracker_g2o(
-      const cv::Matx33d& intrinsicLeft,
-      const cv::Matx33d& intrinsicRight,
-      double stereo_baseline
-    );
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     /**
-     * RefineCameraPose is the main working part of the tracker:
-     * call this for every frame.
-     * This will estimate the new pose of the system
-     * and return a potential CameraPose.
+     * @brief This should be called for every frame of incoming stereo images.
+     * This will use an estimate of the current camera pose and will try
+     * to adjust it to the current map by minimizing reprojection errors.
      */
-    CameraPose RefineCameraPose(const CameraPose& estimatedCameraPose,
-      const std::map<MapPoint *, std::pair<Measurement, Measurement> > &measurementsStereo,
-      const std::map<MapPoint *, Measurement> &measurementsLeft,
-      const std::map<MapPoint *, Measurement> &measurementsRight
+    CameraPose RefineCameraPose(
+      const CameraPose& estimatedCameraPose,
+      const sptam::RectifiedCameraParameters& rectified_camera_parameters,
+      const std::list<Match>& measurements
     );
 
-protected:
+    class not_enough_points : public std::runtime_error
+    {
+      public:
+        not_enough_points()
+          : std::runtime_error("Not enough points for tracking.") {}
+    };
 
-    Eigen::Vector2d focal_length_;
-    Eigen::Vector2d principal_point_;
+  protected:
 
-    // G2O optimizer
-    g2o::SparseOptimizer optimizer_;
-    double gainTerminateThreshold_;
+  // G2O optimizer
 
-    // Calibration
+    G2ODriver g2o_driver_;
 
-    cv::Matx33d intrinsicLeft_;
-    cv::Matx33d intrinsicRight_;
+  private:
 
-    double stereo_baseline_;
+  // helper functions
 
-    g2o::OptimizableGraph::Vertex* BuildNewVertex(int vertex_id, const CameraPose& cameraPose, const bool isFixed);
-    g2o::OptimizableGraph::Vertex* BuildNewVertex(int vertex_id, const MapPoint& mapPoint);
-    g2o::OptimizableGraph::Edge* BuildNewMonoEdge(int pointId, int keyFrameId, const cv::Point2d& projection);
-    g2o::OptimizableGraph::Edge* BuildNewMonoEdgeRight(int pointId, int keyFrameId, const cv::Point2d& projection);
-    g2o::OptimizableGraph::Edge* BuildNewStereoEdge(int pointId, int keyFrameId, const cv::Point2d& projectionLeft, const cv::Point2d& projectionRight);
-
-    CameraPose GetPose(int keyFrameId);
-
-
+    Eigen::Matrix6d GetPoseCovariance(g2o::HyperGraph::Vertex& pose_vertex);
 };

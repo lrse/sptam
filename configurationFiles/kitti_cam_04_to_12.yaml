@@ -1,0 +1,12 @@
+%YAML:1.0
+
+image_width: 1226
+image_height: 370
+
+camera_matrix: !!opencv-matrix
+  rows: 3
+  cols: 3
+  dt: d
+  data: [ 7.070912000000e+02, 0, 6.018873000000e+02, 0, 7.070912000000e+02, 1.831104000000e+02, 0, 0, 1 ]
+
+baseline: 5.3715065326e-01

@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -26,40 +31,81 @@
  * University of Buenos Aires
  */
 
+#include <algorithm>
 #include "MapMakerThread.hpp"
-#include "utils/Profiler.hpp"
-#include "utils/Logger.hpp"
 #include "utils/macros.hpp"
 
-MapMakerThread::MapMakerThread(
-  sptam::Map& map,
-  const CameraParameters& cameraCalibrationLeft,
-  const CameraParameters& cameraCalibrationRight,
-  const double stereo_baseline,
-  const Parameters& params
-)
-  : MapMaker( map, cameraCalibrationLeft, cameraCalibrationRight, stereo_baseline, params )
-  , globalBAIsRunning_(false), stop_(false)
-  , maintenanceThread_(&MapMakerThread::Maintenance, this)
-{}
+#ifdef SHOW_PROFILING
+#include "../sptam/utils/log/Profiler.hpp"
+#include "../sptam/utils/log/ScopedProfiler.hpp"
+#endif
 
-void MapMakerThread::AddKeyFrame(StereoFrame::UniquePtr& keyFrame)
+MapMakerThread::MapMakerThread(sptam::Map& map, const Parameters& params)
+  : MapMaker( map, params ), stop_( false ), processing_(false)
 {
-  // Tell the mapmaker to stop doing low-priority stuff
-  // and concentrate on this KF first.
-  skipMaintenanceIteration_ = true;
+  maintenanceThread_ = std::thread(&MapMakerThread::Maintenance, this);
+}
 
-  // break the bundle adjustment if its running
-  if ( globalBAIsRunning_ ) {
-    std::cout << "-- -- -- INTERRUPT GLOBAL BA -- -- --" << std::endl;
-    InterruptBA();
-    std::cout << "-- -- -- LISTO!!! -- -- --" << std::endl;
+sptam::Map::SharedKeyFrame MapMakerThread::AddKeyFrame(const StereoFrame& frame, /*const */std::list<Match>& measurements)
+{
+
+  sptam::Map::SharedKeyFrame keyFrame;
+  {
+    boost::unique_lock<boost::shared_mutex> scoped_lock( map_.map_mutex_ );
+    keyFrame = map_.AddKeyFrame( frame );
   }
 
-  // push new keyframe to queue and signal
-  keyFrameQueue_.push( keyFrame.release() );
+  // Create new 3D points from unmatched features,
+  // and save them in the local tracking map.
+  createNewPoints( keyFrame );
 
-  // TODO ojo que acá podría suceder que el mapper haga un push,
+  // Load matched map point measurements into the new keyframe.
+  {
+    #ifdef SHOW_PROFILING
+      sptam::Timer t_map_lock;
+      t_map_lock.start();
+    #endif
+
+    boost::unique_lock<boost::shared_mutex> scoped_lock( map_.map_mutex_ );
+
+    #ifdef SHOW_PROFILING
+      t_map_lock.stop();
+      WriteToLog(" tk lock_add_meas: ", t_map_lock);
+    #endif
+
+    #ifdef SHOW_PROFILING
+    {
+      sptam::ScopedProfiler timer(" tk add_meas: ");
+    #endif
+
+    // the point could have expired in the meantime, so check it.
+    for ( auto& match : measurements )
+      map_.addMeasurement( keyFrame, match.mapPoint, match.measurement );
+
+    #ifdef SHOW_PROFILING
+    }
+    #endif
+  }
+
+  /*#ifdef SHOW_PROFILING
+    WriteToLog(" ba totalKeyFrames: ", map_.nKeyFrames());
+    WriteToLog(" ba totalPoints: ", map_.nMapPoints());
+  #endif*/
+
+  #ifdef DISABLE_LOCALMAPPING
+  #ifdef USE_LOOPCLOSURE
+  /* Local Mapping is disabled, pass new keyframes to LC inmediately */
+  if(loopclosing_ != nullptr)
+    loopclosing_->addKeyFrame(keyFrame);
+  #endif
+  #else // DISABLE_LOCALMAPPING
+  // push new keyFrame to queue and signal
+  keyFrameQueue_.push( keyFrame );
+  requests_[PROCESS_REQUEST] = true;
+  requests_cv_.notify_all();
+  #endif
+
+  // WARNING ojo que acá podría suceder que el mapper haga un push,
   // ya que esta funcion se ejecuta en el hilo del tracker.
   // En este caso, la llamada de abajo podría tener uno (o más)
   // frames de más.
@@ -67,6 +113,8 @@ void MapMakerThread::AddKeyFrame(StereoFrame::UniquePtr& keyFrame)
   #ifdef SHOW_PROFILING
     WriteToLog(" tk queueSize: ", keyFrameQueue_.size());
   #endif
+
+  return keyFrame;
 }
 
 void MapMakerThread::Stop()
@@ -76,11 +124,10 @@ void MapMakerThread::Stop()
   keyFrameQueue_.waitEmpty();
 
   stop_ = true;
-  skipMaintenanceIteration_ = true;
-
-  InterruptBA();
 
   keyFrameQueue_.stop();
+
+  requests_cv_.notify_all();
 
   std::cout << "-- -- -- WAIT JOIN -- -- --" << std::endl;
   maintenanceThread_.join();
@@ -88,137 +135,205 @@ void MapMakerThread::Stop()
 
 void MapMakerThread::Maintenance()
 {
-  while ( not stop_ ) {
+  while ( not stop_ )
+  {
 
-    skipMaintenanceIteration_ = false;
+    processing_ = false;
 
-    std::list<StereoFrame*> keyframes;
+    std::bitset<2> requests;
 
-    StereoFrame* keyframe;
-    bool moreData = keyFrameQueue_.waitAndPop( keyframe );
-    keyframes.push_back( keyframe );
-
-    while ( (keyframes.size() < 5) and moreData )
     {
-      moreData = keyFrameQueue_.waitAndPop( keyframe );
-      keyframes.push_back( keyframe );
+      std::unique_lock<std::mutex> lock(requests_mutex_);
+
+      requests_cv_.wait(lock, [this]{return stop_ or requests_.any();});
+
+      requests = requests_; // Copy request to local variable
+      requests_.reset(); // Clearing requests
     }
 
-    // An abrupt stop is necessary because the data aquired by
-    // waitAndPop() in case of a shutdown may be garbage.
-    if ( stop_ )
-      return;
+    if ( stop_ ) return;
 
-    #ifdef SHOW_PROFILING
-      double start_total = GetSeg();
-    #endif
+    processing_ = true;
 
-    // TODO hace falta? me parece que son muy poco probables los casos
-    // en los que serviría de algo como para andarlo corriendo todo el tiempo
-    // It is necessasry to remove bad measurements.
-    // Just in case, some point was erased after it was observed
-    // HandleBadPoints(); // si esta funcion esta comentada puede ser que se rompa sptam?
+    if(requests[LOCKWINDOW_REQUEST])
+      attendLockUsageWindow();
 
-    #ifdef SHOW_PROFILING
-      double start_refind = GetSeg();
-    #endif
+    if(requests[PROCESS_REQUEST] and (not keyFrameQueue_.empty()))
+    {
+      attendNewKeyframes();
 
-    // esta funcion tiene un costo computacional muy alto (mejora la precision si se la utiliza)
-    // obtener mas mediciones para los KeyFrames que se quiere agregar al mapa
-//    for ( auto keyFrame : keyframes ) {
-//      int nFoundNow = ReFindInSingleKeyFrame( *keyFrame );
-//      std::cout << "Refined Points: " << nFoundNow << std::endl;
-//    }
-
-    #ifdef SHOW_PROFILING
-      double end_refind = GetSeg();
-      WriteToLog(" ba ReFindInSingleKeyFrame: ", start_refind, end_refind);
-    #endif
-
-    // Add KeyFrames to the Map
-    for ( auto keyFrame : keyframes ) {
-      map_.AddKeyFrame( keyFrame );
+      if(not keyFrameQueue_.empty())
+      {
+        std::unique_lock<std::mutex> lock(requests_mutex_);
+        requests_[PROCESS_REQUEST] = true;
+      }
     }
-
-    // Get New MapPoints triangulated by the keyframes
-    for ( auto keyFrame : keyframes ) {
-      const std::vector<MapPoint*>& newKeyFramePoints = GetNewMapPoints( *keyFrame );
-      newPoints_.reserve( newPoints_.size() + newKeyFramePoints.size() );
-      newPoints_.insert( newPoints_.end(), newKeyFramePoints.begin(), newKeyFramePoints.end() );
-    }
-
-    #ifdef SHOW_PROFILING
-      std::cout << "Se agrega/n " << keyframes.size() << " KeyFrame al mapa." << std::endl;
-
-      WriteToLog(" ba totalKeyFrames: ", map_.nKeyFrames());
-      WriteToLog(" ba totalPoints: ", map_.nMapPoints());
-    #endif
-
-    // general maintenance
-
-    // Refine Newly made points (the ones added from stereo matches
-    // when the last keyframe came in)
-
-    #ifdef SHOW_PROFILING
-      double start_refine = GetSeg();
-    #endif
-
-    // First, make a list of the n keyframes we want adjusted in the adjuster.
-    // This will be the lasts keyframe inserted
-    std::vector<StereoFrame*> keyframesRefined = LastKeyFrames( nKeyFramesToAdjustByLocal_ );
-
-    /*int nFound = */ReFindNewlyMade( keyframesRefined );
-
-    #ifdef SHOW_PROFILING
-      double end_refine = GetSeg();
-      WriteToLog(" ba ReFindNewlyMade: ", start_refine, end_refine);
-    #endif
-
-    // LOCAL Bundle Adjustment
-    // LOCAL BA must run always on constrast to original PTAM
-    // because Not necessarily GLOBAL BA will run because it could be interrupted
-
-    #ifdef SHOW_PROFILING
-      double start_local = GetSeg();
-    #endif
-
-    BundleAdjustRecent();
-
-    #ifdef SHOW_PROFILING
-      double end_local = GetSeg();
-      WriteToLog(" ba local: ", start_local, end_local);
-    #endif
-
-    // Mapper thread was intrrupted?
-    if ( skipMaintenanceIteration_ )
-      continue;
-
-    // GLOBAL Bundle Adjustment
-
-    #ifdef SHOW_PROFILING
-      double start_global = GetSeg();
-    #endif
-
-    // set Global BA is running
-    globalBAIsRunning_ = true;
-
-//    BundleAdjustAll();
-
-    // set Global BA is not running
-    globalBAIsRunning_ = false;
-
-    #ifdef SHOW_PROFILING
-      double end_global = GetSeg();
-      WriteToLog(" ba global: ", start_global, end_global);
-    #endif
-
-    // Remove bad points marked by BA
-
-    CleanupMap();
-
-    #ifdef SHOW_PROFILING
-      double end_total = GetSeg();
-      WriteToLog(" ba totalba: ", start_total, end_total);
-    #endif
   }
+}
+
+void MapMakerThread::attendLockUsageWindow()
+{
+  /* This is a safe portion of code where to define safe window*/
+  std::lock_guard<std::mutex> lock(usagewindow_mutex_);
+
+  for (sptam::Map::SharedKeyFrame& keyFrame : LBA_keyframes_window_){
+    locked_window_.insert( keyFrame );
+    for( auto it : keyFrame->covisibilityKeyFrames() )
+      locked_window_.insert( it.first );
+  }
+
+  isUsageWindowLocked_ = true;
+}
+
+void MapMakerThread::attendNewKeyframes()
+{
+  // Select at most 5 new unprocessed keyFrames to refine.
+  std::list< sptam::Map::SharedKeyFrame > keyFrames;
+  {
+    sptam::Map::SharedKeyFrame keyFrame;
+    bool moreData = keyFrameQueue_.waitAndPop( keyFrame );
+    keyFrames.push_back( keyFrame );
+
+    while ( (keyFrames.size() < 5) and moreData )
+    {
+      moreData = keyFrameQueue_.waitAndPop( keyFrame );
+      keyFrames.push_back( keyFrame );
+    }
+  }
+
+  #ifdef SHOW_PROFILING
+    sptam::ScopedProfiler timer(" ba totalba: ");
+  #endif
+
+  // Get New MapPoints triangulated by the keyFrames
+  std::list<sptam::Map::SharedPoint> new_points;
+
+  // Fill in new_points and update LBA_keyframes_window_.
+  LBA_keyframes_window_.clear(); // clear previous Local BA processed keyframes
+  for ( auto keyFrame : keyFrames )
+  {
+    std::list<sptam::Map::SharedPoint> newKeyFramePoints = getPointsCreatedBy( keyFrame );
+
+    new_points.insert(new_points.end(), newKeyFramePoints.begin(), newKeyFramePoints.end());
+
+    // update cache buffer
+    LBA_keyframes_window_.push_back( keyFrame );
+  }
+
+  // most recent keyframe extracted from the queue
+  sptam::Map::SharedKeyFrame recentKeyframe = keyFrames.back();
+
+  FillLBAKeyframesWindow( recentKeyframe );
+
+  /*#ifdef SHOW_PROFILING
+    //std::cout << "Se agrega/n " << keyframes.size() << " KeyFrame al mapa." << std::endl;
+
+    WriteToLog(" ba totalKeyFrames: ", map_.nKeyFrames());
+    WriteToLog(" ba totalPoints: ", map_.nMapPoints());
+  #endif*/
+
+  // general maintenance
+
+  // Refine Newly made points (the ones added from stereo matches
+  // when the last keyframe came in)
+
+  #ifdef SHOW_PROFILING
+  {
+    sptam::ScopedProfiler timer(" ba refind_newly_made: ");
+  #endif
+
+  /*int nFound = */ReFind( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ), ListIterable<sptam::Map::SharedPoint>::from( new_points ) );
+
+  #ifdef SHOW_PROFILING
+  }
+  #endif
+
+  #ifdef SHOW_PROFILING
+    sptam::Timer t_local;
+    t_local.start();
+  #endif
+
+  // No lock is required: LBA_keyframes_window_ is an internal variable and it is not modified by other thread
+  // No lock is required: The keyframes have an internal lock for their modification
+  bool completed = BundleAdjust( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ) );
+
+  #ifdef SHOW_PROFILING
+    t_local.stop();
+    WriteToLog(" ba local: ", t_local);
+  #endif
+
+  #ifdef USE_LOOPCLOSURE
+  /* Notifying newly added keyframe to Loop Closure service */
+  if(loopclosing_ != nullptr)
+    loopclosing_->addKeyFrames(keyFrames);
+  #endif
+
+  // If Mapper thread was intrrupted, don't do any cleanup.
+  if ( not completed )
+    return;
+
+  // Remove bad points marked by BA
+  CleanupMap( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ) );
+}
+
+// Check if the local window used by the LBA is locked
+bool MapMakerThread::isSafe(sptam::Map::SharedKeyFrame keyframe) {
+  if( isUsageWindowLocked() )
+    return (locked_window_.count( keyframe ) == 1);
+  else
+    return true;
+}
+
+
+void MapMakerThread::waitUntilEmptyQueue()
+{ keyFrameQueue_.waitEmpty(); }
+
+bool MapMakerThread::isProcessing()
+{ return processing_.load(); }
+
+const sptam::Map::SharedKeyFrameSet& MapMakerThread::lockUsageWindow()
+{
+  {
+    // Requesting the establishment of a safe window
+    std::lock_guard<std::mutex> lock(usagewindow_mutex_);
+
+    isUsageWindowLocked_ = false;
+    locked_window_.clear();
+
+    requests_[LOCKWINDOW_REQUEST] = true;
+    requests_cv_.notify_all();
+  }
+
+  while(!isUsageWindowLocked())
+    std::this_thread::yield();
+
+  return locked_window_;
+}
+
+void MapMakerThread::freeUsageWindow()
+{
+  std::lock_guard<std::mutex> lock(usagewindow_mutex_);
+
+  isUsageWindowLocked_ = false;
+  locked_window_.clear();
+}
+
+bool MapMakerThread::isUsageWindowLocked()
+{
+  std::lock_guard<std::mutex> lock(usagewindow_mutex_);
+  return isUsageWindowLocked_;
+}
+
+bool hasMeasurement(const sptam::Map::KeyFrame& keyFrame, const sptam::Map::SharedPoint& mapPoint)
+{
+  for (const auto& meas : keyFrame.measurements() )
+    if (meas->mapPoint().get() == mapPoint.get())
+      return true;
+
+  return false;
+}
+
+bool MapMakerThread::isUnmatched(const sptam::Map::KeyFrame& keyFrame, const sptam::Map::SharedPoint& mapPoint)
+{
+  return not hasMeasurement(keyFrame, mapPoint) and MapMaker::isUnmatched(keyFrame, mapPoint);
 }

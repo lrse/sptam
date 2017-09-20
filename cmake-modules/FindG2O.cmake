@@ -9,6 +9,7 @@ FIND_PATH(G2O_INCLUDE_DIR g2o/core/base_vertex.h
   /opt/local/include
   /sw/local/include
   /sw/include
+  /opt/ros/$ENV{ROS_DISTRO}/include
   NO_DEFAULT_PATH
   )
 

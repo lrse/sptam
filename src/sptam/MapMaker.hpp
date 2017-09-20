@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,55 +32,33 @@
  */
 #pragma once
 
+#include <Eigen/StdVector>
 #include "Map.hpp"
+#include "Match.hpp"
 #include "BundleDriver.hpp"
 #include "RowMatcher.hpp"
+#include "sptamParameters.hpp"
+#include "utils/fixed_queue.hpp"
 
-#include <queue>
+#ifdef USE_LOOPCLOSURE
+#include "loopclosing/LoopClosing.hpp"
+#endif
+
+// Minimum number of measurements required for a keyframe
+// to be considered "good". If the number of measurements drops
+// below this threshold, the keyframe is erased from the map.
+// TODO This should be a parameter
+// I put this here because, I am lazy, sorry :( (thomas)
+#define MIN_NUM_MEAS 10
 
 /**
- * 
+ *
  */
 class MapMaker
 {
   public:
 
-    /**
-     * Collection of some tuning parameters
-     * that are given to a Mapper
-     */
-    struct Parameters
-    {
-      cv::Ptr<cv::DescriptorMatcher> descriptorMatcher;
-
-      // Matching variables
-      size_t matchingCellSize;
-      size_t matchingNeighborhoodThreshold;      // default: 1
-      double matchingDistanceThreshold; // default: 25
-      double epipolarDistanceThreshold; // default: 2
-
-      // min linear distance between KeyFrames
-      // that triggers a KeyFrame creation.
-      double keyFrameDistanceThreshold;
-
-      // ...
-      size_t framesBetweenKeyFrames;
-    };
-
-    MapMaker(
-      sptam::Map& map,
-      const CameraParameters& cameraCalibrationLeft,
-      const CameraParameters& cameraCalibrationRight,
-      const double stereo_baseline,
-      const Parameters& params
-    );
-
-    // Generate the initial Map with the stereo camera
-    bool InitFromStereo(
-      const cv::Mat& frameLeft, const cv::Mat& frameRight,
-      const cv::Matx33d& intrinsicLeft, const cv::Matx33d& intrinsicRight,
-      const CameraPose& cameraPoseLeft, const CameraPose& cameraPoseRight
-    );
+    MapMaker(sptam::Map& map, const Parameters& params);
 
     /**
      * Add a key-frame to the map. Called by the tracker.
@@ -84,67 +67,80 @@ class MapMaker
      * just dumps it on the top of the mapmaker's queue to
      * be dealt with later, and return.
      */
-    virtual void AddKeyFrame(StereoFrame::UniquePtr& keyFrame);
+    virtual sptam::Map::SharedKeyFrame AddKeyFrame(const StereoFrame& frame, /*const */std::list<Match>& measurements);
 
-    // Is it a good camera pose to add another KeyFrame?
-    bool NeedNewKeyFrame(const StereoFrame& kCurrent);
+    void addStereoPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame, const std::vector<MapPoint,Eigen::aligned_allocator<MapPoint>>& points, const std::vector<Measurement>& measurements);
 
-    // Is the camera far away from the nearest KeyFrame (i.e. maybe lost?)
-    //bool IsDistanceToNearestKeyFrameExcessive(StereoFrame &kCurrent);
+    #ifdef USE_LOOPCLOSURE
+    void setLoopClosing(std::shared_ptr<LoopClosing>& lc)
+    {loopclosing_ = lc;}
+    #endif
 
-    // interface compliance
-    inline void Stop()
-    {}
+    size_t getKFsToAdjustByLocal()
+    {return params_.nKeyFramesToAdjustByLocal;}
+
+
+    /**
+     * Dummy function in sequential mode
+     */
+    virtual void Stop(){;}
+
+  // Get Triangulated MapPoints from a given KeyFrame
+  std::list<sptam::Map::SharedPoint> getPointsCreatedBy(const sptam::Map::SharedKeyFrame& keyFrame);
+
+  // When new map points are generated, they're only created from a stereo pair
+  // this tries to make additional measurements in other KFs which they might
+  // be in. It returns the number of newly found measurements.
+  size_t ReFind(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames, Iterable<sptam::Map::SharedPoint>&& new_points);
 
   // Some functions are protected so they are reachable
   // by the threaded version of the MapMaker.
   protected:
 
-    // TODO ver si se puede hacer privado el mapa
     sptam::Map& map_;
 
+    #ifdef USE_LOOPCLOSURE
+    /* Loop Closure service, will notify him when a new key frame its added. */
+    std::shared_ptr<LoopClosing> loopclosing_;
+    #endif
 
-    // Queue of newly-made map points to re-find in other KeyFrames
-    std::vector<MapPoint*> newPoints_;
+    RowMatcher rowMatcher_;
 
-  // Thresholds and Parameters
+    typedef fixed_queue< sptam::Map::SharedKeyFrame > KeyFrameCache;
 
-    size_t nKeyFramesToAdjustByLocal_;
+    // list of keyframes to be adjusted by the LBA and used to refind measurements from new created points.
+    std::list< sptam::Map::SharedKeyFrame > LBA_keyframes_window_; // Gaston: LoopClosure safe usage windows uses this member variable for sincronization
 
   // Maintenance functions:
 
     // Interrupt Glogal Bundle Adjustment
     void InterruptBA();
 
-    // Peform a local bundle adjustment which only adjusts
-    // recently added key-frames
-    void BundleAdjustRecent();
+    void FillLBAKeyframesWindow(sptam::Map::SharedKeyFrame keyframe);
 
-    // Perform bundle adjustment on all keyframes, all map points
-    void BundleAdjustAll();
+    // Peform a local bundle adjustment which only adjusts a selection of keyframes.
+    bool BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames);
 
+    void createNewPoints(sptam::Map::SharedKeyFrame& keyFrame);
 
-    // Get Triangulated MapPoints from a given KeyFrame
+    /**
+     * This tells if refind should try to match a certain point to a certain keyframe.
+     * In the Sequential case, since the new_points are from a single keyframe
+     * in each iteration, and that keyframe is not checked for refinds,
+     * we can assume that the point was not matched before in the given list of keyframes.
+     */
+    virtual bool isUnmatched(const sptam::Map::KeyFrame& keyFrame, const sptam::Map::SharedPoint& mapPoint);
 
-    std::vector<MapPoint*> GetNewMapPoints(const StereoFrame& keyFrame);
+    virtual void CleanupMap(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames);
 
-    // A general data-association update for a single keyframe
-    // Do this on a new key-frame when it's passed in by the tracker
-    int ReFindInSingleKeyFrame(StereoFrame& keyFrame);
+    virtual void RemoveMeasurements(Iterable<sptam::Map::SharedMeas>&& measurements);
 
-    // When new map points are generated, they're only created from a stereo pair
-    // this tries to make additional measurements in other KFs which they might
-    // be in.
-    int ReFindNewlyMade( const std::vector<StereoFrame*>& keyFrames );
+    void RemoveBadKeyFrames(const ConstIterable<sptam::Map::SharedKeyFrame>& keyFrames);
 
-    void RemoveMeasurements( const std::list< std::pair<StereoFrame*, MapPoint*> >& basMeasurements);
+  // helper functions
+  private:
 
-    // Erase point and keyframes that were marked as bad
-    // during the last bundle adjustment.
-    void CleanupMap();
-
-    // get last n KeyFrames
-    const std::vector<StereoFrame*> LastKeyFrames(const unsigned int n) const;
+    std::list< sptam::Map::SharedPoint > filterUnmatched(const sptam::Map::KeyFrame& keyFrame, Iterable<sptam::Map::SharedPoint>& mapPoints);
 
   private:
 
@@ -152,46 +148,14 @@ class MapMaker
 
     BundleDriver bundleDriver_;
 
-    CameraParameters cameraCalibrationLeft_;
-    CameraParameters cameraCalibrationRight_;
+    virtual sptam::Map::SharedKeyFrameSet getSafeCovisibleKFs(sptam::Map::SharedKeyFrameSet& baseKFs);
 
-    cv::Ptr<cv::DescriptorMatcher> descriptorMatcher_;
+    virtual bool isSafe(sptam::Map::SharedKeyFrame keyframe);
 
-  // Frustum Culling and Camera variables
 
-    double frustumNearPlaneDist_;
-    double frustumFarPlaneDist_;
+  protected:
 
-  // Thresholds and Parameters
+  /*** Algorithm thresholds and parameters ***/
 
-    size_t maxIterationsGlobal_;
-    size_t maxIterationsLocal_;
-
-    //~ double epipolarDistanceThreshold_;
-    double matchingDistanceThreshold_;
-    double keyFrameDistanceThreshold_;
-    double matchingNeighborhood_;
-
-  /*** Private functions ***/
-
-  // Data association functions:
-
-    // Mapmaker's try-to-find-a-point-in-a-keyframe code. This is used to update
-    // data association if a bad measurement was detected, or if a point
-    // was never searched for in a keyframe in the first place. This operates
-    // much like the tracker! So most of the code looks just like in
-    // Matching.cpp.
-    bool FindMeasurement(Frame& keyFrame, MapPoint& mapPoint);
-
-  // General Maintenance/Utility:
-
-    double KeyFrameLinearDist(const StereoFrame& k1, const StereoFrame& k2);
-
-    StereoFrame* ClosestKeyFrame(const StereoFrame& k);
-
-    std::vector<StereoFrame*> NClosestKeyFrames(StereoFrame& k, unsigned int N);
+    Parameters params_;
 };
-
-
-// TODO: ESTA FUNCION NO DEBERIA IR ACA
-bool InitFromStereo(sptam::Map& map, StereoFrame& frame, const cv::Mat& imageLeft, const RowMatcher& matcher);

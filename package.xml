@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<package>
+<package format="2">
   <name>sptam</name>
   <version>0.0.0</version>
   <description>The sptam package</description>
@@ -16,33 +16,23 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <build_depend>roscpp</build_depend>
-  <build_depend>std_msgs</build_depend>
-  <build_depend>sensor_msgs</build_depend>
-  <build_depend>geometry_msgs</build_depend>
-  <build_depend>nav_msgs</build_depend>
-  <build_depend>cv_bridge</build_depend>
-  <build_depend>OpenCV</build_depend>
-  <build_depend>pcl_ros</build_depend>
-  <build_depend>message_filters</build_depend>
-  <build_depend>image_geometry</build_depend>
-  <build_depend>tf_conversions</build_depend>
-  <build_depend>cmake_modules</build_depend>
-
-  <run_depend>roscpp</run_depend>
-  <run_depend>std_msgs</run_depend>
-  <run_depend>sensor_msgs</run_depend>
-  <run_depend>geometry_msgs</run_depend>
-  <run_depend>nav_msgs</run_depend>
-  <run_depend>cv_bridge</run_depend>
-  <run_depend>OpenCV</run_depend>
-  <run_depend>pcl_ros</run_depend>
-  <run_depend>message_filters</run_depend>
-  <run_depend>image_geometry</run_depend>
-  <run_depend>tf_conversions</run_depend>
-  <run_depend>cmake_modules</run_depend>
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>pcl_ros</depend>
+  <depend>message_filters</depend>
+  <depend>image_geometry</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>cmake_modules</depend>
+  <depend>nodelet</depend>
+  <depend>libg2o</depend>
 
   <export>
-
+    <nodelet plugin="${prefix}/sptam_plugin.xml" />
   </export>
 </package>

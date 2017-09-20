@@ -6,6 +6,11 @@ CMakeScripts
 Makefile
 cmake_install.cmake
 install_manifest.txt
+CMakeLists.txt.user*
+
+# Documentation #
+#################
+doc/
 
 # Compiled source #
 ###################
@@ -60,12 +65,17 @@ install_manifest.txt
 # Logs and databases #
 ######################
 *.log
+*.dat
 
 # Images #
 ##########
-*.png
 *.pdf
 *.jpg
+
+# Project files #
+##################
+*.prj
+.geanyprj
 
 # Temporal files #
 ##################

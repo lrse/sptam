@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -30,41 +35,83 @@
 #include "Map.hpp"
 #include "tracker_g2o.hpp"
 #include "MapMakerThread.hpp"
+#include "sptamParameters.hpp"
+
+#include "PosePredictor.hpp"
+#include "TrackingReport.hpp"
+#include "utils/draw/TrackerView.hpp"
+
+#ifdef USE_LOOPCLOSURE
+#include "loopclosing/LoopClosing.hpp"
+#include "loopclosing/LCDetector.hpp"
+#endif
 
 class SPTAM
 {
   public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    SPTAM(const RowMatcher& rowMatcher, const Parameters& params);
 
-    SPTAM(
-      sptam::Map& map,
-      const CameraParameters& cameraParametersLeft,
-      const CameraParameters& cameraParametersRight,
-      const double stereo_baseline,
-      const RowMatcher& rowMatcher,
-      const MapMaker::Parameters& params
-    );
+    void init(/*const*/ StereoFrame& frame);
 
-    CameraPose track(
-      const CameraPose& estimatedCameraPose,
-      const ImageFeatures &imageFeaturesLeft,
-      const ImageFeatures &imageFeaturesRight,
-      const cv::Mat& imageLeft,
-      const cv::Mat& imageRight);
+    inline bool isInitialized() const
+    { return initialized_; }
+
+    /**
+     * Track current frame. If individual images are supplied, they are used to draw results of tracking.
+     */
+    TrackingReport track(StereoFrame& frame, sptam::TrackerView& tracker_view);
 
     inline void stop()
-    { mapMaker_.Stop(); }
+    {
+      mapMaker_.Stop();
+      #ifdef USE_LOOPCLOSURE
+      if(loopclosing_)
+        loopclosing_->stop();
+      #endif
+    }
+
+    /* Quick tracking state implementation,
+     * this way LoopClosing knows when its safe to correct trayectory */
+    bool isTracking();
+
+    #ifdef USE_LOOPCLOSURE
+    void setLoopClosing(std::unique_ptr<LCDetector>& loop_detector);
+    #endif
+
+    /* Sincronization messages with loopclosure  */
+    void setLoopCorrection(const Eigen::Isometry3d& T = Eigen::Isometry3d::Identity());
+    void pause();
+    void unPause();
+    bool isPaused();
+    void stopAddingKeyframes();
+    void resumeAddingKeyframes();
+    bool isAddingKeyframesStopped();
+
+    /* This getters serve as a proxy to the map object for the ros version,
+     * this exposes const references to internal lists of the map. 
+     * Otherwise the ros node doesnt've access to the map. */
+    inline sptam::Map& GetMap()
+    { return map_; }
+
+    /* This getters gives unsafe access to the internal referenceKF.
+     * This is being used within the lc thread */
+    inline sptam::Map::SharedKeyFrame getReferenceKeyframe()
+    { return referenceKeyFrame_; }
 
   protected:
 
-    // TODO: feo, no deberíamos hacer una copia?
-    // the map (points + views)
-    sptam::Map& map_;
+    sptam::Map map_;
 
     // the map builder interface
     // To run the mapper in a parallel thread, build an instance
     // of MapMakerThread.
     // If the run should be sequential, build an instance of MapMaker.
-    MapMakerThread mapMaker_;
+    #ifdef SINGLE_THREAD
+      MapMaker mapMaker_;
+    #else
+      MapMakerThread mapMaker_;
+    #endif
 
     // the tracker interface
     // To run the the tracker with g2o, build an instance
@@ -73,30 +120,53 @@ class SPTAM
     // of Tracker.
     tracker_g2o tracker_;
 
-    MapMaker::Parameters params_;
+    // TODO referenceKeyFrame_ is used by KeyframePolicy function. The KeyframePolicy should be an abstract class instead of a function.
+    // The keyframepPolicy should maintain the referenceKeyframe_.
+    // Moreover, the KeyframePolicy class should takes as parameter a keyframe policy.
+    // referenceKeyframe_ now is used to obtain the local map
+    sptam::Map::SharedKeyFrame referenceKeyFrame_;
 
-    const CameraParameters cameraParametersLeft_;
-    const CameraParameters cameraParametersRight_;
-    const double stereo_baseline_;
+    /* the set of points from the local map which matched to features in the last frame */
+    sptam::Map::SharedMapPointSet tracked_map_;
+
+    #ifdef USE_LOOPCLOSURE
+    /* LoopClosing interface created using the loop detector passed. */
+    std::shared_ptr<LoopClosing> loopclosing_; // pointer, as may or may-not be created
+    #endif
+
+    // This mutex must be use to protect isPause, isTracking, isAddingKeyframesStopped booleans and the error loop correction lc_T matrix.
+    mutable std::mutex pause_mutex_;
+    bool isTracking_ = false;
+    bool isPaused_ = false;
+    bool isAddingKeyframesStopped_ = false;
+    void setTracking(bool);
+
+    /* In case of a loop correction, the lc thread will report the acumulated error perceived
+     * otherwise the Mat will be empty. This will serve as a correction for the posepredictor/motionmodel
+     * prior received. The error its expresed as the delta tranformation between the two loop keyframes */
+    Eigen::Isometry3d lc_T_ = Eigen::Isometry3d::Identity(); // 4x4 dimension!
+
+    Parameters params_;
 
     RowMatcher rowMatcher_;
 
   // some system statistics
 
     size_t frames_since_last_kf_;
-    size_t frames_number_;
 
   // helper functions
 
-    // try to match features in the stereo frame to their corresponding
-    // points on the map, and return those measurements.
-    void matchToGlobal( const StereoFrame& frame,
-                        std::vector<Measurement>& measurementsLeft,
-                        std::vector<Measurement>& measurementsRight);
+    /**
+     * @brief select the map points that are relevant to a frame (i.e. the local map).
+     *   Map points are filtered by frustum culling and by the
+     *   angle-of-view of the last descriptor.
+     *   TODO: This could be asked to the map and the map should returns it in an efficient way
+     */
+    void filterPoints(const StereoFrame& frame, sptam::Map::SharedMapPointList &localMap, sptam::Map::SharedKeyFrameSet &localKeyFrames);
 
-    void matchToPoints(const StereoFrame& frame, const std::vector<MapPoint*>& mapPoints, std::vector<Measurement>& measurementsLeft, std::vector<Measurement>& measurementsRight);
+    bool shouldBeKeyframe(const StereoFrame& frame, const std::list<Match>& measurements);
 
-    void createNewPoints(StereoFrame& frame, const cv::Mat& imageLeft, std::vector<MapPoint*>& mapPoints);
+  private:
 
-    bool shouldBeKeyframe(const StereoFrame& frame);
+    bool initialized_;
 };

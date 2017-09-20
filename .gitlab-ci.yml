@@ -1,0 +1,33 @@
+before_script:
+   - /prepare.sh
+   - apt-get install -y python-matplotlib
+
+build:
+  stage: build
+  tags:
+    - ros-kinetic
+  script:
+    # Build ROS in four configurations
+    - /build.sh --cmake-args -DSHOW_TRACKED_FRAMES=ON  -DSHOW_PROFILING=ON
+    - /build.sh --cmake-args -DSHOW_TRACKED_FRAMES=ON  -DSHOW_PROFILING=OFF
+    - /build.sh --cmake-args -DSHOW_TRACKED_FRAMES=OFF -DSHOW_PROFILING=ON
+    - /build.sh --cmake-args -DSHOW_TRACKED_FRAMES=OFF -DSHOW_PROFILING=OFF
+    # Build standalone in release config for running tests
+    - cd $CI_PROJECT_DIR/src/standAlone && mkdir -p build && cd build && 
+         cmake -DSHOW_TRACKED_FRAMES=OFF -DSHOW_PROFILING=ON -DCMAKE_BUILD_TYPE=Release .. && make
+    # Run KITTI 04 in standalone mode
+    - cd $CI_PROJECT_DIR/src/standAlone && 
+        ./build/sptam-stereo --timestamps /datasets/KITTI/04/times.txt
+                ../../configurationFiles/kitti.yaml
+                ../../configurationFiles/kitti_cam_04_to_12.yaml
+                /datasets/KITTI/04/image_0 /datasets/KITTI/04/image_1
+                dir
+    # Run plot-errors to compute errors and make plots
+    - $CI_PROJECT_DIR/plotters/plot-errors.py --savetofiles --kitti /datasets/KITTI/poses/04.txt $CI_PROJECT_DIR/src/standAlone/*.log > $CI_PROJECT_DIR/src/standAlone/errors.log
+  artifacts:
+    paths:
+      - $CI_PROJECT_DIR/src/standAlone/*.log
+      - $CI_PROJECT_DIR/src/standAlone/*.png
+    expire_in: '1 week'
+
+

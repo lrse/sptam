@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -29,45 +34,85 @@
 
 #include <set>
 #include <iostream>
-#include <opencv2/core/core.hpp>
+#include <eigen3/Eigen/Geometry>
+
+#include <boost/thread/shared_mutex.hpp>
+#include <boost/thread/locks.hpp>
+#include <boost/thread/lock_types.hpp>
+
+#include "opencv2/core/version.hpp"
+#if CV_MAJOR_VERSION == 2
+  #include <opencv2/core/core.hpp>
+#elif CV_MAJOR_VERSION == 3
+  #include <opencv2/core.hpp>
+#endif
+
+#define INITIAL_POINT_COVARIANCE Eigen::Matrix3d::Identity() * 1e-4
 
 class MapPoint
 {
   public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    MapPoint(const Eigen::Vector3d& position, const Eigen::Vector3d& normal, const cv::Mat& descriptor, const Eigen::Matrix3d& covariance);
 
+    MapPoint(const MapPoint& mapPoint);
 
-    MapPoint(const cv::Point3d& position, const cv::Point3d& normal, const cv::Mat& descriptor);
+    inline Eigen::Vector3d GetPosition() const
+    {
+      boost::shared_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      return position_;
+    }
 
-    inline void SetId(int id)
-    { id_ = id; }
+    inline Eigen::Vector3d GetNormal() const
+    {
+      boost::shared_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      return normal_;
+    }
 
-    inline int GetId() const
-    { return id_; }
+    inline void updateNormal(const Eigen::Vector3d& normal)
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      normal_ = normal;
+    }
 
-    inline const cv::Point3d& GetPosition() const
-    { return position_; }
+    inline void updatePosition(const Eigen::Vector3d& new_position)
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      position_ = new_position;
+    }
 
-    inline const cv::Point3d& GetNormal() const
-    { return normal_; }
+    inline const cv::Mat GetDescriptor() const
+    {
+      boost::shared_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      return descriptor_.clone();
+    }
 
-    inline void SetNormal(const cv::Point3d& normal)
-    { normal_ = normal; }
+    inline void updateDescriptor(const cv::Mat& descriptor)
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      descriptor.copyTo(descriptor_);
+    }
 
-    inline void updatePosition(const cv::Point3d& new_position)
-    { position_ = new_position; }
+    const Eigen::Matrix3d covariance() const
+    {
+      boost::shared_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      return covariance_;
+    }
 
-    inline const cv::Mat& GetDescriptor() const
-    { return descriptor_; }
-
-    inline void SetDescriptor(const cv::Mat& descriptor)
-    { descriptor.copyTo(descriptor_); }
+    // Statistics update operations.
 
     // should this be considered a bad point?
     inline bool IsBad() const
     {
+      boost::shared_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      //std::cout << "nMeasurements: " << mapPoint.measurementCount_ << std::endl;
+      //std::cout << "projectionCount: " << mapPoint.projectionCount_ << std::endl;
+      //std::cout << "inliers: " << mapPoint.inlierCount_ << std::endl;
+      //std::cout << "outliers: " << mapPoint.outlierCount_ << std::endl;
+
       return
-        // If not even the 2 original measurements are treated as inliers
-        ( measurementCount_ < 2 )
+        // If it has no measurement
+        ( measurementCount_ == 0 )
         // If the outlier count is too high
         or ( 20 < outlierCount_ and inlierCount_ < outlierCount_ )
         // If the measurement count is too low
@@ -75,80 +120,83 @@ class MapPoint
     }
 
     inline void IncreaseOutlierCount()/* const **/
-    { outlierCount_++; }
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      outlierCount_++;
+    }
 
     inline void IncreaseInlierCount()/* const **/
-    { inlierCount_++; }
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      inlierCount_++;
+    }
 
     inline void IncreaseProjectionCount()/* const **/
-    { projectionCount_++; }
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      projectionCount_++;
+    }
 
-    inline void IncreaseMeasurementCount() const
-    { measurementCount_++; }
+    inline void IncreaseMeasurementCount()/* const **/
+    {
+      boost::unique_lock<boost::shared_mutex> lock(mpoint_mutex_);
+      measurementCount_++;
+    }
 
-    inline void DecreaseMeasurementCount() const
-    { measurementCount_--; }
 
+    /** NOTE: these are not locked since they are to be used from the main thread which is the same as the tracking thread */
 
-    /**
-     * @brief GetMeasurementCount is used for plotting and debugging
-     * @return
-     */
-    inline int GetMeasurementCount() const
-    { return measurementCount_; }
+    inline cv::Vec3d getColor() const
+    { return color_; }
 
-	private:
+    inline void setColor(cv::Vec3b& color)
+    { color_ = color; }
 
-    int id_;
+  private:
+
+    mutable boost::shared_mutex mpoint_mutex_;
 
     // position in world coordinates.
-    cv::Point3d position_;
+    Eigen::Vector3d position_;
+
+    Eigen::Matrix3d covariance_;
 
     // unit vector pointing from the camera position
     // where the feature was seen to the feature position.
     // Assuming the feature lies on a locally planar surface,
     // it is a rough estimate of the surface normal.
-    // TODO we don't need a 3D orientation or scale invariant
-    // descriptors since we assume the cameras are on a vehicle
-    // moving on the ground, but it might be desirable in the future.
-    cv::Point3d normal_;
+    Eigen::Vector3d normal_;
 
     // descriptor of the projected feature
     cv::Mat descriptor_;
 
-  // This stats are used to evaluate the quality of the mapPoint.
+    // This stats are used to evaluate the quality of the mapPoint.
 
     /**
      * @brief how many times was this point marked as an outlier
      */
-    /*mutable */int outlierCount_;
+    /*mutable */size_t outlierCount_;
 
     /**
-     * @brief how many times was this point marked as an outlier
+     * @brief how many times was this point marked as an inlier
      */
-    /*mutable */int inlierCount_;
+    /*mutable */size_t inlierCount_;
 
     /**
      * @brief How many times was this point projected onto an image?
      * In other terms, its the number of views whose frustum contains
      * this point.
      */
-    /*mutable */int projectionCount_;
+    /*mutable */size_t projectionCount_;
 
     /**
-     * @brief how many times was this point matched to a feature?
-     * In other terms, its the number of views which have
-     * recorded measurements of this point.
+     * @brief How many times was this point find in an image?
+     * Note that this include the measurements from the tracking phase
+     * and the keyframes.
      */
-    mutable int measurementCount_;
+    /*mutable */size_t measurementCount_;
 
+    cv::Vec3b color_;
 
-  public:
-    // for visualization debugging
-    // TODO sacar de aca adentro
-    cv::Vec3b color;
-
-
+    //friend class sptam::Map;
 };
-
-std::ostream& operator << (std::ostream& os, const MapPoint& mapPoint);

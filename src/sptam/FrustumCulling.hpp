@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,18 +20,19 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
-
 #pragma once
 
-#include "CameraPose.hpp"
+#include <eigen3/Eigen/Geometry>
 
 /**
  * Class that represents a Viewing Frustum
@@ -36,43 +40,39 @@
 class FrustumCulling
 {
   public:
-
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     FrustumCulling(
-      const CameraPose& cameraPose,
-      double horizontalFOV, double verticalFOV,
-      double nearPlaneDist, double farPlaneDist
+      const Eigen::Vector3d& position, const Eigen::Quaterniond& orientation,
+      double horizontalFOV, double verticalFOV, double nearPlaneDist, double farPlaneDist
     );
 
     /**
      * Test if a point lies inside the frustum or not
      */
-    bool Contains(const cv::Point3d& point) const;
-
-    /**
-     * Get the frustum origin
-     */
-    cv::Point3d GetPosition() const;
+    bool Contains(const Eigen::Vector3d& point) const;
 
     /**
      * Debugging Function is used for daw the frustum with PCL
      */
-    void GetFarPlaneCorners(cv::Point3d& bottomLeftCorner, cv::Point3d& bottomRightCorner, cv::Point3d& topLeftCorner, cv::Point3d& topRightCorner);
+    void GetFarPlaneCorners(Eigen::Vector3d& bottomLeftCorner, Eigen::Vector3d& bottomRightCorner, Eigen::Vector3d& topLeftCorner, Eigen::Vector3d& topRightCorner);
 
   private:
 
-    CameraPose cameraPose_;
+    Eigen::Vector3d position_;
+    Eigen::Matrix3d orientation_;
 
-    cv::Vec4d nearPlane_;
-    cv::Vec4d farPlane_;
-    cv::Vec4d leftPlane_;
-    cv::Vec4d rightPlane_;
-    cv::Vec4d topPlane_;
-    cv::Vec4d bottomPlane_;
+    Eigen::Vector4d nearPlane_;
+    Eigen::Vector4d farPlane_;
+    Eigen::Vector4d leftPlane_;
+    Eigen::Vector4d rightPlane_;
+    Eigen::Vector4d topPlane_;
+    Eigen::Vector4d bottomPlane_;
 
-    cv::Point3d bottomLeftFarCorner_;
-    cv::Point3d bottomRightFarCorner_;
-    cv::Point3d topLeftFarCorner_;
-    cv::Point3d topRightFarCorner_;
+    // far plane corners are saved to draw frustum when debugging.
+    Eigen::Vector3d fp_bl;
+    Eigen::Vector3d fp_br;
+    Eigen::Vector3d fp_tl;
+    Eigen::Vector3d fp_tr;
 
     void ComputeFrustum(
       double horizontalFOV, double verticalFOV,

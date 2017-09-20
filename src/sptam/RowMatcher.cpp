@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -39,18 +44,24 @@ bool compare(int a, int b, const std::vector<cv::KeyPoint>& keypoints)
   return keypoints[a].pt.y < keypoints[b].pt.y;
 }
 
+/* lower_bound uses compare function as (*it < value) */
 bool compareLowerBound(int index, double value, const std::vector<cv::KeyPoint>& keypoints)
 {
   return keypoints[index].pt.y < value;
 }
 
+/* upper_bound uses compare function as (value < *it) */
 bool compareUpperBound(double value, int index, const std::vector<cv::KeyPoint>& keypoints)
 {
-  return keypoints[index].pt.y > value;
+  return value < keypoints[index].pt.y;
 }
 
 RowMatcher::RowMatcher(double maxDistance, cv::Ptr<cv::DescriptorMatcher> descriptorMatcher, double rowRange)
   : descriptorMatcher_( descriptorMatcher->clone() ), matchingDistanceThreshold_( maxDistance ), range_( rowRange )
+{}
+
+RowMatcher::RowMatcher(double maxDistance, int normType, bool crossCheck, double rowRange)
+  : descriptorMatcher_( new cv::BFMatcher(normType, crossCheck) ), matchingDistanceThreshold_( maxDistance ), range_( rowRange )
 {}
 
 void RowMatcher::match(
@@ -104,37 +115,35 @@ void RowMatcher::match(
 
     // get range iterators for potential matches
     auto min = std::lower_bound(std::begin(sorted_indexes_2), std::end(sorted_indexes_2),
-    query_measurement.y - range, std::bind(compareLowerBound,  std::placeholders::_1, std::placeholders::_2, keypoints2));
+      query_measurement.y - range, std::bind(compareLowerBound,  std::placeholders::_1, std::placeholders::_2, keypoints2));
     auto max = std::upper_bound(std::begin(sorted_indexes_2), std::end(sorted_indexes_2),
-    query_measurement.y + range, std::bind(compareUpperBound,  std::placeholders::_1, std::placeholders::_2, keypoints2));
+      query_measurement.y + range, std::bind(compareUpperBound,  std::placeholders::_1, std::placeholders::_2, keypoints2));
 
     // if there are no descriptors in the specified row range
     // skip to next query point
     if ( not (max - min) )
       continue;
 
-    int min_idx = min - std::begin(sorted_indexes_2);
-    int max_idx = max - std::begin(sorted_indexes_2);
-
     // get potential descriptors in row range
     cv::Mat mask(cv::Mat::zeros(1, descriptors2.rows, CV_8UC1));
-    for(int i = min_idx ; i < max_idx ; ++i) {
-      int valid_index = sorted_indexes_2[i];
+    for(auto it = min; it != max; it++) {
+      int valid_index = *it;
       mask.at<uchar>(valid_index) = true;
     }
 
-    std::vector<cv::DMatch> match;
-    matcher.match( query_descriptor, descriptors2, match, mask);
+    std::vector<cv::DMatch> match_candidates;
+    matcher.match(query_descriptor, descriptors2, match_candidates, mask);
 
-    // TODO remove after testing
-    assert( match.size() == 1 );
-
-    // check if satisfy the matching distance threshold
-    if (match[0].distance > matchingDistanceThreshold)
+    // was found a match?
+    if (match_candidates.empty())
       continue;
 
-    match[0].queryIdx = idx1;
+    // check if satisfy the matching distance threshold
+    if (match_candidates[0].distance > matchingDistanceThreshold)
+      continue;
 
-    matches.push_back(match[0]);
+    match_candidates[0].queryIdx = idx1;
+
+    matches.push_back(match_candidates[0]);
   }
 }

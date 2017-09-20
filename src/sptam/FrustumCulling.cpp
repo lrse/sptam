@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,21 +32,24 @@
  */
 
 #include "FrustumCulling.hpp"
-#include "utils/projective_math.hpp"
+
+inline Eigen::Vector4d toHomo(const Eigen::Vector3d& p)
+{
+  return Eigen::Vector4d( p[0], p[1], p[2], 1 );
+}
 
 FrustumCulling::FrustumCulling(
-  const CameraPose& cameraPose,
-  double horizontalFOV, double verticalFOV,
-  double nearPlaneDist, double farPlaneDist
+  const Eigen::Vector3d& position, const Eigen::Quaterniond& orientation,
+  double horizontalFOV, double verticalFOV, double nearPlaneDist, double farPlaneDist
 )
-  : cameraPose_(cameraPose)
+  : position_( position ), orientation_( orientation )
 {
   ComputeFrustum( horizontalFOV, verticalFOV, nearPlaneDist, farPlaneDist );
 }
 
-bool FrustumCulling::Contains(const cv::Point3d& point) const
+bool FrustumCulling::Contains(const Eigen::Vector3d& point) const
 {
-  cv::Vec4d pointHomo = toHomo( point );
+  Eigen::Vector4d pointHomo = toHomo( point );
 
   return
     (pointHomo.dot (leftPlane_) <= 0) &&
@@ -53,41 +61,25 @@ bool FrustumCulling::Contains(const cv::Point3d& point) const
     (pointHomo.dot (farPlane_) <= 0);
 }
 
-cv::Point3d FrustumCulling::GetPosition() const
+void FrustumCulling::GetFarPlaneCorners(Eigen::Vector3d& bottomLeftCorner, Eigen::Vector3d& bottomRightCorner, Eigen::Vector3d& topLeftCorner, Eigen::Vector3d& topRightCorner)
 {
-  return cameraPose_.GetPosition();
+  bottomLeftCorner = fp_bl;
+  bottomRightCorner = fp_br;
+  topLeftCorner = fp_tl;
+  topRightCorner = fp_tr;
 }
-
-void FrustumCulling::GetFarPlaneCorners(cv::Point3d& bottomLeftCorner, cv::Point3d& bottomRightCorner, cv::Point3d& topLeftCorner, cv::Point3d& topRightCorner)
-{
-  bottomLeftCorner = bottomLeftFarCorner_;
-  bottomRightCorner = bottomRightFarCorner_;
-  topLeftCorner = topLeftFarCorner_;
-  topRightCorner = topRightFarCorner_;
-}
-
-  /*** private functions ***/
 
 void FrustumCulling::ComputeFrustum(
   double horizontalFOV, double verticalFOV,
   double nearPlaneDist, double farPlaneDist
 )
 {
-  cv::Vec3d position = GetPosition();
-
   // view vector for the camera  - third column of the orientation matrix
-  cv::Vec3d view = cv::Vec3d( cv::Mat( cameraPose_.GetOrientationMatrix().col(2) ) );
+  Eigen::Vector3d view = orientation_.col( 2 );
   // up vector for the camera  - second column of the orientation matix
-  cv::Vec3d up = -cv::Vec3d( cv::Mat( cameraPose_.GetOrientationMatrix().col(1) ) );
+  Eigen::Vector3d up = -orientation_.col( 1 );
   // right vector for the camera - first column of the orientation matrix
-  cv::Vec3d right = cv::Vec3d( cv::Mat( cameraPose_.GetOrientationMatrix().col(0) ) );
-
-  cv::Vec4d pl_n; // near plane
-  cv::Vec4d pl_f; // far plane
-  cv::Vec4d pl_t; // top plane
-  cv::Vec4d pl_b; // bottom plane
-  cv::Vec4d pl_r; // right plane
-  cv::Vec4d pl_l; // left plane
+  Eigen::Vector3d right = orientation_.col( 0 );
 
   float vfov_rad = float (verticalFOV * M_PI / 180); // degrees to radians
   float hfov_rad = float (horizontalFOV * M_PI / 180); // degrees to radians
@@ -98,35 +90,33 @@ void FrustumCulling::ComputeFrustum(
   float fp_h = float (2 * tan (vfov_rad / 2) * farPlaneDist);    // far plane height
   float fp_w = float (2 * tan (hfov_rad / 2) * farPlaneDist);    // far plane width
 
-  cv::Vec3d fp_c (position + view * farPlaneDist);  // far plane center
-  cv::Vec3d fp_tl (fp_c + (up * fp_h / 2) - (right * fp_w / 2));  // Top left corner of the far plane
-  cv::Vec3d fp_tr (fp_c + (up * fp_h / 2) + (right * fp_w / 2));  // Top right corner of the far plane
-  cv::Vec3d fp_bl (fp_c - (up * fp_h / 2) - (right * fp_w / 2));  // Bottom left corner of the far plane
-  cv::Vec3d fp_br (fp_c - (up * fp_h / 2) + (right * fp_w / 2));  // Bottom right corner of the far plane
+  Eigen::Vector3d fp_c (position_ + view * farPlaneDist);  // far plane center
+  fp_tl = Eigen::Vector3d(fp_c + (up * fp_h / 2) - (right * fp_w / 2));  // Top left corner of the far plane
+  fp_tr = Eigen::Vector3d(fp_c + (up * fp_h / 2) + (right * fp_w / 2));  // Top right corner of the far plane
+  fp_bl = Eigen::Vector3d(fp_c - (up * fp_h / 2) - (right * fp_w / 2));  // Bottom left corner of the far plane
+  fp_br = Eigen::Vector3d(fp_c - (up * fp_h / 2) + (right * fp_w / 2));  // Bottom right corner of the far plane
 
-  cv::Vec3d np_c (position + view * nearPlaneDist);                   // near plane center
-  cv::Vec3d np_tr (np_c + (up * np_h / 2) + (right * np_w / 2));   // Top right corner of the near plane
-  cv::Vec3d np_bl (np_c - (up * np_h / 2) - (right * np_w / 2));   // Bottom left corner of the near plane
-  cv::Vec3d np_br (np_c - (up * np_h / 2) + (right * np_w / 2));   // Bottom right corner of the near plane
+  Eigen::Vector3d np_c (position_ + view * nearPlaneDist);                   // near plane center
+  Eigen::Vector3d np_tr (np_c + (up * np_h / 2) + (right * np_w / 2));   // Top right corner of the near plane
+  Eigen::Vector3d np_bl (np_c - (up * np_h / 2) - (right * np_w / 2));   // Bottom left corner of the near plane
+  Eigen::Vector3d np_br (np_c - (up * np_h / 2) + (right * np_w / 2));   // Bottom right corner of the near plane
 
-  cv::Vec3d fp_b_vec = fp_bl - fp_br;
-  cv::Vec3d fp_normal =  fp_b_vec.cross(fp_tr - fp_br);   // Far plane equation - cross product of the perpendicular edges of the far plane
-  cv::Mat pl_f_mat(pl_f, false); // represent as matrix (it is no copied)
-  cv::Mat(fp_normal).copyTo(pl_f_mat(cv::Rect(0,0,1,3)));
-  pl_f(3) = -fp_c.dot(pl_f_mat(cv::Rect(0,0,1,3)));
+  Eigen::Vector3d fp_b_vec = fp_bl - fp_br;
+  Eigen::Vector3d fp_normal =  fp_b_vec.cross(fp_tr - fp_br);   // Far plane equation - cross product of the perpendicular edges of the far plane
+  farPlane_.head( 3 ) = fp_normal;
+  farPlane_[ 3 ] = -fp_c.dot( fp_normal );
 
-  cv::Vec3d np_b_vec = np_tr - np_br;
-  cv::Vec3d np_normal =  np_b_vec.cross(np_bl - np_br);   // Near plane equation - cross product of the perpendicular edges of the near plane
-  cv::Mat pl_n_mat(pl_n, false); // represent as matrix (it is no copied)
-  cv::Mat(np_normal).copyTo(pl_n_mat(cv::Rect(0,0,1,3)));
-  pl_n(3) = -np_c.dot(pl_n_mat(cv::Rect(0,0,1,3)));
+  Eigen::Vector3d np_b_vec = np_tr - np_br;
+  Eigen::Vector3d np_normal =  np_b_vec.cross(np_bl - np_br);   // Near plane equation - cross product of the perpendicular edges of the near plane
+  nearPlane_.head( 3 ) = np_normal;
+  nearPlane_[3] = -np_c.dot( np_normal );
 
-  cv::Vec3d a (fp_bl - position);    // Vector connecting the camera and far plane bottom left
-  cv::Vec3d b (fp_br - position);    // Vector connecting the camera and far plane bottom right
-  cv::Vec3d c (fp_tr - position);    // Vector connecting the camera and far plane top right
-  cv::Vec3d d (fp_tl - position);    // Vector connecting the camera and far plane top left
+  Eigen::Vector3d a (fp_bl - position_);    // Vector connecting the camera and far plane bottom left
+  Eigen::Vector3d b (fp_br - position_);    // Vector connecting the camera and far plane bottom right
+  Eigen::Vector3d c (fp_tr - position_);    // Vector connecting the camera and far plane top right
+  Eigen::Vector3d d (fp_tl - position_);    // Vector connecting the camera and far plane top left
 
-  //                   Frustum and the vectors a, b, c and d. 'position' is the position of the camera
+  //                   Frustum and the vectors a, b, c and d. 'position_' is the position of the camera
   //                             _________
   //                           /|       . |
   //                       d  / |   c .   |
@@ -143,47 +133,28 @@ void FrustumCulling::ComputeFrustum(
 //  std::cout << "d: " << d << std::endl;
 //  std::cout << "d: " << T << std::endl;
 
-  cv::Mat pl_r_mat(pl_r, false); // represent as matrix (it is no copied)
-  cv::Mat pl_l_mat(pl_l, false); // represent as matrix (it is no copied)
-  cv::Mat pl_t_mat(pl_t, false); // represent as matrix (it is no copied)
-  cv::Mat pl_b_mat(pl_b, false); // represent as matrix (it is no copied)
+  Eigen::Vector3d rightPlane_normal = b.cross (c);
+  rightPlane_.head( 3 ) = rightPlane_normal;
+  rightPlane_[3] = -position_.dot( rightPlane_normal );
 
-  cv::Vec3d pl_r_normal = b.cross (c);
-  cv::Mat(pl_r_normal).copyTo(pl_r_mat(cv::Rect(0,0,1,3)));
+  Eigen::Vector3d leftPlane_normal = d.cross (a);
+  leftPlane_.head( 3 ) = leftPlane_normal;
+  leftPlane_[3] = -position_.dot( leftPlane_normal );
 
-  cv::Vec3d pl_l_normal = d.cross (a);
-  cv::Mat(pl_l_normal).copyTo(pl_l_mat(cv::Rect(0,0,1,3)));
+  Eigen::Vector3d topPlane_normal = c.cross (d);
+  topPlane_.head( 3 ) = topPlane_normal;
+  topPlane_[3] = -position_.dot( topPlane_normal );
 
-  cv::Vec3d pl_t_normal = c.cross (d);
-  cv::Mat(pl_t_normal).copyTo(pl_t_mat(cv::Rect(0,0,1,3)));
+  Eigen::Vector3d bottomPlane_normal = a.cross (b);
+  bottomPlane_.head( 3 ) = bottomPlane_normal;
+  bottomPlane_[3] = -position_.dot( bottomPlane_normal );
 
-  cv::Vec3d pl_b_normal = a.cross (b);
-  cv::Mat(pl_b_normal).copyTo(pl_b_mat(cv::Rect(0,0,1,3)));
+//  std::cout << "leftPlane_normal: " << leftPlane_normal << std::endl;
 
-//  std::cout << "pl_l_normal: " << pl_l_normal << std::endl;
-
-  pl_r(3) = -position.dot(pl_r_mat(cv::Rect(0,0,1,3)));
-  pl_l(3) = -position.dot(pl_l_mat(cv::Rect(0,0,1,3)));
-  pl_t(3) = -position.dot(pl_t_mat(cv::Rect(0,0,1,3)));
-  pl_b(3) = -position.dot(pl_b_mat(cv::Rect(0,0,1,3)));
-
-  // save planes
-  nearPlane_ = pl_n;
-  farPlane_ = pl_f;
-  leftPlane_ = pl_l;
-  rightPlane_ = pl_r;
-  topPlane_ = pl_t;
-  bottomPlane_ = pl_b;
-
-  bottomLeftFarCorner_ = fp_bl;
-  bottomRightFarCorner_ = fp_br;
-  topLeftFarCorner_ = fp_tl;
-  topRightFarCorner_ = fp_tr;
-
-//  std::cout << "pl_n:" << std::endl << pl_n << std::endl;
-//  std::cout << "pl_f:" << std::endl << pl_f << std::endl;
-//  std::cout << "pl_l:" << std::endl << pl_l << std::endl;
-//  std::cout << "pl_r:" << std::endl << pl_r << std::endl;
-//  std::cout << "pl_t:" << std::endl << pl_t << std::endl;
-//  std::cout << "pl_b:" << std::endl << pl_b << std::endl;
+//  std::cout << "nearPlane_:" << std::endl << nearPlane_ << std::endl;
+//  std::cout << "farPlane_:" << std::endl << farPlane_ << std::endl;
+//  std::cout << "leftPlane_:" << std::endl << leftPlane_ << std::endl;
+//  std::cout << "rightPlane_:" << std::endl << rightPlane_ << std::endl;
+//  std::cout << "topPlane_:" << std::endl << topPlane_ << std::endl;
+//  std::cout << "bottomPlane_:" << std::endl << bottomPlane_ << std::endl;
 }

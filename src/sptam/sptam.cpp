@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,380 +32,361 @@
  */
 
 #include "sptam.hpp"
+#include "Match.hpp"
+#include "match_to_points.hpp"
 #include "utils/macros.hpp"
+#include "utils/cv2eigen.hpp"
+#include <opencv2/core/eigen.hpp>
+#include "utils/projective_math.hpp"
+
 #include "KeyFramePolicy.hpp"
 #include "FeatureExtractorThread.hpp"
+#include <boost/range/adaptor/indirected.hpp>
 
-#ifdef SHOW_TRACKED_FRAMES
+#include <boost/thread/locks.hpp>
+#include <boost/thread/lock_types.hpp>
+#include <Eigen/StdVector>
 
-  #include "utils/Draw.hpp"
-
-  // window to draw tracking image
-  #define KEYFRAME_TRACKER_WINDOW_NAME "Tracker KeyFrame"
-
-#endif // SHOW_TRACKED_FRAMES
+#ifdef ENABLE_PARALLEL_CODE
+#include <tbb/parallel_for.h>
+#endif
 
 #ifdef SHOW_PROFILING
-  #include "../sptam/utils/Profiler.hpp"
+  #include "../sptam/utils/log/Profiler.hpp"
 #endif // SHOW_PROFILING
 
-SPTAM::SPTAM(
-  sptam::Map& map,
-  const CameraParameters& cameraParametersLeft,
-  const CameraParameters& cameraParametersRight,
-  const double stereo_baseline,
-  const RowMatcher& rowMatcher,
-  const MapMaker::Parameters& params
-)
-  : map_( map )
-  , mapMaker_( map_, cameraParametersLeft, cameraParametersRight, stereo_baseline, params )
-  , tracker_( cameraParametersLeft.intrinsic, cameraParametersRight.intrinsic, stereo_baseline )
+// ===================== //
+// Some magic numbers :) //
+// ===================== //
+
+// Minimum number of triangulated points required to initialize a "good" map.
+#define MIN_POINTS_FOR_MAP 10
+
+SPTAM::SPTAM(const RowMatcher& rowMatcher, const Parameters& params)
+  : mapMaker_(map_, params)
+  , referenceKeyFrame_( nullptr )
   , params_( params )
-  , cameraParametersLeft_( cameraParametersLeft )
-  , cameraParametersRight_( cameraParametersRight )
-  , stereo_baseline_( stereo_baseline )
   , rowMatcher_( rowMatcher )
   , frames_since_last_kf_( 0 )
-  , frames_number_ ( 0 )
-{}
-
-CameraPose SPTAM::track(
-  const CameraPose& estimatedCameraPose,
-  const ImageFeatures& imageFeaturesLeft, const ImageFeatures& imageFeaturesRight,
-  const cv::Mat &imageLeft, const cv::Mat &imageRight)
+  , initialized_( false )
 {
-  StereoFrame::UniquePtr frame( new StereoFrame(
-    estimatedCameraPose, cameraParametersLeft_,
-    stereo_baseline_, cameraParametersRight_,
-    imageFeaturesLeft, imageFeaturesRight
-  ));
+#ifdef OPENCV_THREADS
+  cv::setNumThreads(OPENCV_THREADS);
+  std::cout << "OpenCV: threads set to " << OPENCV_THREADS << std::endl;
+#endif
+}
 
-  // Here we will save the measured features in this frame,
-  // to be passed to the tracker for pose refinement.
-  std::vector<Measurement> measurementsLeft, measurementsRight;
+void SPTAM::init(/*const*/ StereoFrame& frame)
+{
+  std::vector<MapPoint, Eigen::aligned_allocator<MapPoint> > points;
+  std::vector<Measurement> measurements;
+
+  frame.TriangulatePoints(rowMatcher_, points, measurements);
+
+  // check that there are at least a minimum number of correct matches when there is no map
+  if ( points.size() < MIN_POINTS_FOR_MAP )
+    throw std::runtime_error("Not enough points to initialize map.");
+
+  // Add Keyframe to the map
+  sptam::Map::SharedKeyFrame keyFrame = map_.AddKeyFrame( frame );
+
+  mapMaker_.addStereoPoints(keyFrame, points, measurements);
+
+  referenceKeyFrame_ = keyFrame;
+
+  initialized_ = true;
+
+  // add new points to the tracked_map
+  for(auto& meas : referenceKeyFrame_->measurements()) {
+    sptam::Map::SharedPoint sharedPoint = meas->mapPoint();
+    tracked_map_.insert( sharedPoint );
+  }
+}
+
+TrackingReport SPTAM::track(StereoFrame& frame, sptam::TrackerView& tracker_view)
+{
+  while(isPaused())
+    std::this_thread::yield();
+
+  setTracking(true);
+
+  frames_since_last_kf_++;
+
+  CameraPose estimatedCameraPose = frame.GetCameraPose();
+
+  TrackingReport report;
+
+  #ifdef USE_LOOPCLOSURE
+  {
+    std::lock_guard<std::mutex> lock(pause_mutex_);
+    if(not lc_T_.matrix().isIdentity()){ // The lc thread its updating a recent part of the map, we need to wait until finish
+      Eigen::Isometry3d estimatedPose; // CameraPose to Isometry pose matrix
+      estimatedPose.linear() = estimatedCameraPose.GetOrientationMatrix();
+      estimatedPose.translation() = estimatedCameraPose.GetPosition();
+
+      estimatedPose = estimatedPose * lc_T_; // applying loop correction
+
+      /* re-setting estimated camera pose */
+      Eigen::Quaterniond orientation(estimatedPose.linear());
+      estimatedCameraPose = CameraPose(estimatedPose.translation(), orientation, Eigen::Matrix6d::Identity());
+      frame.UpdateCameraPose(estimatedCameraPose);
+
+      report.T_corr = lc_T_.matrix();
+
+      lc_T_.setIdentity();
+    }
+  }
+  #endif
+
+  filterPoints( frame, report.localMap, report.localKeyFrames );
 
   // Try to match the features found in the new frame to the
   // 3D points saved in the map.
-  matchToGlobal( *frame, measurementsLeft, measurementsRight );
-
   #ifdef SHOW_PROFILING
-    WriteToLog( " tk matched_feat_left: ", measurementsLeft.size() );
-    WriteToLog( " tk matched_feat_right: ", measurementsRight.size() );
-    WriteToLog( " tk matched_feat_total: ", measurementsLeft.size() + measurementsRight.size() );
+    sptam::Timer t_find_matches;
+    t_find_matches.start();
   #endif
 
-  #ifdef SHOW_PROFILING
-    double startStep, endStep;
-    startStep = GetSeg();
-  #endif
-
-  // Load map point measurements into the new frame
-
-  for ( auto meas : measurementsLeft ) {
-    frame->AddMeasurementLeft( meas );
-  }
-
-  for ( auto meas : measurementsRight ) {
-    frame->AddMeasurementRight( meas );
-  }
-
-  #ifdef SHOW_TRACKED_FRAMES
-    // show tracking results as measurement / reprojection correspondences
-    // for the stereo frame (left is the only one used for tracking)
-    cv::Mat trackingFrame = drawTrackedFrames( *frame, imageLeft, imageRight);
-    cv::imshow(KEYFRAME_TRACKER_WINDOW_NAME, trackingFrame);
-    cv::waitKey(30);
-  #endif // SHOW_TRACKED_FRAMES
-
-  std::map<MapPoint*, Measurement> measurementsLeftOnly, emptyMap;
-  std::map<MapPoint*, std::pair<Measurement, Measurement> > measurementsStereo;
-  measurementsStereo = frame->GetMeasurementsStereo();
-  measurementsLeftOnly = frame->GetMeasurementsLeftOnly();
-//  measurementsRightOnly = frame->GetMeasurementsRightOnly(); // las mediciones derechas no estan andando bien
-
-  // The tracker will try to refine the new camera pose
-  // from the computed measurements
-  CameraPose refinedCameraPose = tracker_.RefineCameraPose(
-    estimatedCameraPose, measurementsStereo, measurementsLeftOnly, emptyMap
+  // Here we will save the measured features in this frame,
+  // to be passed to the tracker for pose refinement.
+  std::list<Match> measurements = matchToPoints(
+    frame, ListIterable<sptam::Map::SharedPoint>::from( report.localMap ),
+    params_.descriptorMatcher, params_.matchingNeighborhoodThreshold,
+    params_.matchingDistanceThreshold, Measurement::SRC_TRACKER
   );
 
   #ifdef SHOW_PROFILING
-    std::map<MapPoint*, Measurement> measurementsRightOnly = frame->GetMeasurementsRightOnly();
-    WriteToLog( " tk matched_points_stereo: ", measurementsStereo.size() );
-    WriteToLog( " tk matched_points_only_left: ", measurementsLeftOnly.size() );
-    WriteToLog( " tk matched_points_only_right: ", measurementsRightOnly.size() );
+    t_find_matches.stop();
+    WriteToLog(" tk find_matches: ", t_find_matches);
+    WriteToLog( " tk matched_feat_total: ", measurements.size() );
   #endif
-
-  // Update frame pose
-  frame->UpdateCameraPose( refinedCameraPose );
 
   #ifdef SHOW_PROFILING
-    endStep = GetSeg();
-    WriteToLog(" tk tracking_refine: ", startStep, endStep);
+    sptam::Timer t_update_descriptors;
+    t_update_descriptors.start();
   #endif
 
-  frames_since_last_kf_++;
-  frames_number_++;
+  tracked_map_.clear();
+
+  for ( auto& match : measurements )
+  {
+    // Update the descriptor of the MapPoint with the new one.
+    // It is not needed to ask a lock to the map to modify the descriptor of the mappoint (they have internal locking)
+    match.mapPoint->updateDescriptor( match.measurement.GetDescriptor() );
+
+    match.mapPoint->IncreaseMeasurementCount();
+
+    tracked_map_.insert(match.mapPoint);
+  }
+
+  #ifdef SHOW_PROFILING
+    t_update_descriptors.stop();
+    WriteToLog(" tk update_descriptors: ", t_update_descriptors);
+  #endif
+
+#ifdef SHOW_PROFILING
+  sptam::Timer t_draw;
+#endif
 
   #ifdef SHOW_TRACKED_FRAMES
-    cv::Mat updatedFrame = drawTrackedFrames( *frame, imageLeft, imageRight);
-    cv::imshow("After Refine", updatedFrame);
-    cv::waitKey(30);
+
+#ifdef SHOW_PROFILING
+  t_draw.start();
+#endif
+
+  tracker_view.draw(frame, report.localMap, measurements, params_, true);
+
+#ifdef SHOW_PROFILING
+  t_draw.stop();
+#endif
+
   #endif // SHOW_TRACKED_FRAMES
 
-  if( shouldBeKeyframe( *frame ) ) {
+  #ifdef SHOW_PROFILING
+    sptam::Timer t_tracking_refine;
+    t_tracking_refine.start();
+  #endif
 
-    frame->SetId( frames_number_ );
+  // The tracker will try to refine the predicted camera pose
+  // by reducing the reprojection error from the matched features.
 
-    // Create new 3D points from unmatched features,
-    // and save them in the local tracking map.
-    std::vector<MapPoint*> newPoints;
+  try {
+
+    report.refinedCameraPose = tracker_.RefineCameraPose(
+      estimatedCameraPose, frame.getRectifiedCameraParameters(), measurements
+    );
 
     #ifdef SHOW_PROFILING
-      startStep = GetSeg();
+      t_tracking_refine.stop();
+      WriteToLog(" tk tracking_refine: ", t_tracking_refine);
     #endif
 
-    createNewPoints( *frame, imageLeft, newPoints );
+    frame.UpdateCameraPose( report.refinedCameraPose );
+
+
+    report.trackedMap = tracked_map_;
+
+    report.state = TrackingReport::State::OK;
+
+  } catch( tracker_g2o::not_enough_points& err ) {
+
+    report.refinedCameraPose = estimatedCameraPose;
+
+    report.state = TrackingReport::State::NOT_ENOUGH_POINTS;
 
     #ifdef SHOW_PROFILING
-      WriteToLog(" tk created_new_points: ", newPoints.size());
-    #endif
+      STREAM_TO_LOG( frame.GetId() << " WARNING: " << err.what() << ". measurements: " << measurements.size() );
+    #endif // SHOW_PROFILING
+  }
 
+  #ifdef SHOW_TRACKED_FRAMES
+  #ifdef SHOW_PROFILING
+  t_draw.start();
+  #endif
+  tracker_view.draw(frame, report.localMap, measurements, params_, false);
+  #ifdef SHOW_PROFILING
+  t_draw.stop();
+  #endif
+  #endif // SHOW_TRACKED_FRAMES
+
+  if( report.isOk() and shouldBeKeyframe( frame, measurements ) )
+  {
     #ifdef SHOW_PROFILING
-      endStep = GetSeg();
-      WriteToLog(" tk CreatePoints: ", startStep, endStep);
-    #endif
-
-    // add new points to the global map
-
-    {
-      #ifdef SHOW_PROFILING
-        startStep = GetSeg();
-      #endif
-
-      std::lock_guard<std::mutex> lock( map_.points_mutex_ );
-
-      #ifdef SHOW_PROFILING
-        endStep = GetSeg();
-        WriteToLog(" tk LockAddPoints: ", startStep, endStep);
-      #endif
-
-      map_.AddMapPoints( newPoints );
-    }
-
-    #ifdef SHOW_PROFILING
-      startStep = GetSeg();
+      sptam::Timer t_add_keyframe;
+      t_add_keyframe.start();
     #endif
 
     // The mapMaker takes ownership of the UniquePtr,
     // so after this call the variable should not be used.
-    mapMaker_.AddKeyFrame( frame );
+    sptam::Map::SharedKeyFrame keyFrame = mapMaker_.AddKeyFrame( frame, measurements );
 
     #ifdef SHOW_PROFILING
-      endStep = GetSeg();
-      WriteToLog(" tk AddKeyFrame: ", startStep, endStep);
+      t_add_keyframe.stop();
+      WriteToLog(" tk add_keyframe: ", t_add_keyframe);
     #endif
 
+    referenceKeyFrame_ = keyFrame;
     frames_since_last_kf_ = 0;
 
-    std::cout << " Adding key-frame." << std::endl;
-  }
-  #ifdef SHOW_PROFILING
-  else {
-    std::cout << "frames since last kf: " << frames_since_last_kf_ << std::endl;
-    // Esto está para que haya tantos mensajes como frames
-    WriteToLog(" tk CreatePoints: ", 0, 0);
-    WriteToLog(" tk LockAddPoints: ", 0, 0);
-    WriteToLog(" tk AddKeyFrame: ", 0, 0);
-  }
-  #endif
+    // add new points to the tracked_map_
+    for(auto& meas : referenceKeyFrame_->measurements()) {
+      sptam::Map::SharedPoint sharedPoint = meas->mapPoint();
+      tracked_map_.insert( sharedPoint );
 
-  return refinedCameraPose;
-}
-
-void SPTAM::matchToGlobal( const StereoFrame& frame,
-                          std::vector<Measurement>& measurementsLeft,
-                          std::vector<Measurement>& measurementsRight)
-{
-  std::vector<MapPoint*> filtered_points;
-
-  #ifdef SHOW_PROFILING
-    double start, end;
-    start = GetSeg();
-  #endif
-
-  // std::cout << "lockeando mapa para frustum culling" << std::endl;
-  map_.points_mutex_.lock();
-
-  #ifdef SHOW_PROFILING
-    end = GetSeg();
-    WriteToLog(" tk LockFrustum: ", start, end);
-  #endif
-
-  #ifdef SHOW_PROFILING
-  start = GetSeg();
-  #endif
-
-  // Filter map points by frustum culling
-  // TODO: esto se le deberia poder pedir al mapa, y el mapa
-  // lo debería devolver de manera eficiente (si le fuese posible).
-  for ( auto mapPoint : map_.GetMapPoints() ) {
-
-    const cv::Point3d& point = mapPoint->GetPosition();
-
-    // Compute current normal
-    const cv::Point3d& cameraPosition = frame.GetPosition();
-
-    cv::Point3d currentNormal = point - cameraPosition;
-    currentNormal = currentNormal * ( 1 / cv::norm( currentNormal ) );
-
-    const cv::Point3d& pointNormal = mapPoint->GetNormal();
-
-    // angle is in radians
-    double angle = std::acos( pointNormal.dot( currentNormal ) );
-
-    // Discard Points which were created from a greater 45 degrees pint of view.
-    // TODO: pass as parameter
-    if ( angle < (M_PI / 4.0) ) {
-
-      bool isPointViewed = false;
-
-      if ( frame.GetCameraLeft().CanView( point ) ) {
-        mapPoint->IncreaseProjectionCount(); // increase by projection counter
-        isPointViewed = true;
-      }
-      if ( frame.GetCameraRight().CanView( point ) ) {
-        mapPoint->IncreaseProjectionCount(); // increase by projection counter
-        isPointViewed = true;
-      }
-      if ( isPointViewed ) {
-        filtered_points.push_back( mapPoint );
-      }
+      cv::Vec3b color = tracker_view.featureColor( *meas );
+      sharedPoint->setColor(color);
     }
+
+    //std::cout << "added keyframe " << (uintptr_t)lastKeyFrame_.get() << " with " << lastKeyFrame_->measurements().size() << std::endl;
   }
+  //else std::cout << "no new keyframe" << std::endl;
 
-  #ifdef SHOW_PROFILING
-    end = GetSeg();
-    WriteToLog(" tk Frustum: ", start, end);
-    WriteToLog(" tk visiblePoints: ", filtered_points.size());
-  #endif
+  /* Quick tracking state implementation
+   * this way LoopClosing knows when its safe to correct trayectory */
+  setTracking(false);
 
-  map_.points_mutex_.unlock();
+#ifdef SHOW_PROFILING
+  WriteToLog(" tk drawFrames: ", t_draw);
+#endif
 
-  matchToPoints(frame, filtered_points, measurementsLeft, measurementsRight);
+  return report;
 }
 
-void SPTAM::matchToPoints(const StereoFrame& frame, const std::vector<MapPoint*>& mapPoints,
-                         std::vector<Measurement>& measurementsLeft, std::vector<Measurement>& measurementsRight)
+void SPTAM::filterPoints(const StereoFrame& frame, sptam::Map::SharedMapPointList& localMap, sptam::Map::SharedKeyFrameSet& localKeyFrames)
 {
-  std::vector<cv::Point3d> points;
-  std::vector<cv::Mat> descriptors;
+  sptam::Map::SharedMapPointSet localMapSet;
 
-  points.reserve( mapPoints.size() );
-  descriptors.reserve( mapPoints.size() );
+  {
+    #ifdef SHOW_PROFILING
+    sptam::Timer t_lock_frustum;
+    t_lock_frustum.start();
+    #endif
 
-  for ( auto mapPoint : mapPoints ) {
-    points.push_back( mapPoint->GetPosition() );
-    descriptors.push_back( mapPoint->GetDescriptor() );
+    /* Lock for reading a small segment of the Map, after getting the required points locking is no longer
+       required due to internal locking of MapPoints */
+    boost::shared_lock<boost::shared_mutex> lock(map_.map_mutex_);
+
+    #ifdef SHOW_PROFILING
+    t_lock_frustum.stop();
+    WriteToLog(" tk lock_frustum: ", t_lock_frustum);
+    #endif
+
+    #ifdef SHOW_PROFILING
+    sptam::Timer t_localmap;
+    t_localmap.start();
+    #endif
+
+    map_.getLocalMap( tracked_map_, localMapSet, localKeyFrames, referenceKeyFrame_ );
+
+    #ifdef SHOW_PROFILING
+    t_localmap.stop();
+    WriteToLog(" tk getLocalMap: ", t_localmap);
+    WriteToLog(" tk localPoints: ", localMapSet.size());
+    #endif
   }
+
+#ifdef SHOW_PROFILING
+  sptam::Timer t_frustum;
+  t_frustum.start();
+#endif
+
+#ifdef ENABLE_PARALLEL_CODE
+  std::vector<sptam::Map::SharedPoint> localMapVector;
+  localMapVector.reserve(localMapSet.size());
+  std::copy(localMapSet.begin(), localMapSet.end(), std::back_inserter(localMapVector));
+
+  std::vector<bool> keptPoints(localMapVector.size(), false);
+
+  tbb::parallel_for(tbb::blocked_range<size_t>(0, localMapVector.size()),
+    [&](const tbb::blocked_range<size_t>& range) {
+      for (size_t i = range.begin(); i != range.end(); i++)
+      {
+        const sptam::Map::SharedPoint& mapPoint = localMapVector[i];
+        if ( not mapPoint->IsBad() and frame.canView( *mapPoint ) )
+        {
+          mapPoint->IncreaseProjectionCount();
+          keptPoints[i] = true;
+        }
+      }
+    }, tbb::auto_partitioner() );
+
+  for (size_t i = 0; i < localMapVector.size(); i++)
+    if (keptPoints[i]) localMap.push_back(localMapVector[i]);
+
+#else
+  for ( const sptam::Map::SharedPoint& mapPoint : localMapSet )
+    if ( not mapPoint->IsBad() and frame.canView( *mapPoint ) )
+    {
+      mapPoint->IncreaseProjectionCount();
+      localMap.push_back( mapPoint );
+    }
+#endif
 
   #ifdef SHOW_PROFILING
-    double start, end;
-    start = GetSeg();
+    t_frustum.stop();
+    WriteToLog(" tk frustum: ", t_frustum);
+    WriteToLog(" tk visiblePoints: ", localMap.size());
   #endif
-
-  std::vector<MEAS> measLeft, measRight;
-
-  frame.FindMatches(
-    points, descriptors,
-    *params_.descriptorMatcher,
-    params_.matchingNeighborhoodThreshold,
-    params_.matchingDistanceThreshold,
-    measLeft, measRight
-  );
-
-  #ifdef SHOW_PROFILING
-    end = GetSeg();
-    WriteToLog(" tk FindMatches: ", start, end);
-  #endif
-
-  measurementsLeft.reserve( measLeft.size() );
-  measurementsRight.reserve( measRight.size() );
-
-  for ( auto meas : measLeft ) {
-
-    // Update the descriptor of the MapPoint with the left image descriptor only
-    // aca haria falta pedir el lock
-    mapPoints[ meas.index ]->SetDescriptor( meas.descriptor );
-
-    Measurement measurement(mapPoints[ meas.index ], meas.projection, meas.descriptor);
-    measurement.source = Measurement::SRC_TRACKER;
-
-    measurementsLeft.push_back( measurement );
-  }
-
-  for ( auto meas : measRight ) {
-
-    Measurement measurement(mapPoints[ meas.index ], meas.projection, meas.descriptor);
-    measurement.source = Measurement::SRC_TRACKER;
-
-    measurementsRight.push_back( measurement );
-  }
 }
 
-void SPTAM::createNewPoints(
-  StereoFrame& frame,
-  const cv::Mat& imageLeft,
-  std::vector<MapPoint*>& mapPoints)
+bool SPTAM::shouldBeKeyframe(const StereoFrame& frame, const std::list<Match> &measurements)
 {
-  std::vector<cv::Point3d> points;
-  std::vector<cv::Point2d> featuresLeft, featuresRight;
-  std::vector<cv::Mat> descriptorsLeft, descriptorsRight;
 
-  frame.TriangulatePoints(
-    rowMatcher_,
-    points,
-    featuresLeft, descriptorsLeft,
-    featuresRight, descriptorsRight
-  );
-
-  forn( i, points.size() ) {
-
-    cv::Point3d normal = points[ i ] - frame.GetPosition();
-    normal = normal * ( 1 / cv::norm(normal) );
-
-    MapPoint* mapPoint = new MapPoint( points[ i ], normal, descriptorsLeft[ i ] );
-    mapPoint->color = imageLeft.at<cv::Vec3b>( featuresLeft[ i ] );
-
-    mapPoints.push_back( mapPoint );
-
-    Measurement measLeft(mapPoint, featuresLeft[i], descriptorsLeft[i]);
-    measLeft.source = Measurement::SRC_TRIANGULATION;
-
-    Measurement measRight(mapPoint, featuresRight[i], descriptorsRight[i]);
-    measRight.source = Measurement::SRC_TRIANGULATION;
-
-
-    frame.AddMeasurementLeft( measLeft );
-    frame.AddMeasurementRight( measRight );
+  /* Check if adding keyframes is permitted */
+  if(isAddingKeyframesStopped()){
+    #ifdef SHOW_PROFILING
+    WriteToLog(" tk AddingKframes is paused: ", 1);
+    #endif
+    return false;
   }
-}
-
-bool SPTAM::shouldBeKeyframe(const StereoFrame& frame)
-{
 
   #ifdef SHOW_PROFILING
-    double start, end;
-    start = GetSeg();
+  sptam::Timer t_keyframe_selection;
+  t_keyframe_selection.start();
   #endif
 
-  // las Heuristicas de agregado de keyframes es un trade-off entre velocidad y precision
-  // Mientras mas esporadicamente se agregan los keyframes,
-  // se tendra mas tiempo para ajustar el mapa, pero menos preciso sera el tracking
-
-  // Based Distance Policy
-//  return AddKeyFrameDistancePolicy(frame, map_, params_.keyFrameDistanceThreshold)
-//      or (params_.framesBetweenKeyFrames < frames_since_last_kf_);
+  // the Heuristicas off keyframe selection are a trade-off between performance and accuacy
+  // more keyframes are selected, more keyframes will be queue in mapping thread, and the precision of the system will be compromised
 
   // Based free coverage image Policy
 //  return AddKeyFrameImageCoverPolicy(frame, 1241, 0.2);
@@ -410,15 +396,77 @@ bool SPTAM::shouldBeKeyframe(const StereoFrame& frame)
 
 
   // Based Tracking features percentage wrt to reference keyframe Policy
-  size_t numStereoMeas = frame.GetMeasurementsStereo().size();
-  bool shouldBeKeyframe = (AddKeyFrameTrackingFeaturesPolicy(frame, map_, 0.9)
+  size_t numStereoMeas = measurements.size();
+  bool shouldBeKeyframe = (AddKeyFrameTrackingFeaturesPolicy(frame, measurements, *referenceKeyFrame_, params_.minimumTrackedPointsRatio)
                           or (numStereoMeas < 20)); // number of matches less than a threshold
 
+  //std::cout << "stereo meas: " << numStereoMeas << std::endl;
+
   #ifdef SHOW_PROFILING
-    end = GetSeg();
-    WriteToLog(" tk keyframe_selection_strategy: ", start, end);
+  t_keyframe_selection.stop();
+  WriteToLog(" tk keyframe_selection_strategy: ", t_keyframe_selection);
   #endif
 
   return shouldBeKeyframe;
+}
 
+#ifdef USE_LOOPCLOSURE
+void SPTAM::setLoopClosing(std::unique_ptr<LCDetector>& loop_detector)
+{
+  if(loop_detector)
+  {
+    loopclosing_.reset(new LoopClosing(*this, mapMaker_, map_, loop_detector, {params_.descriptorMatcher, params_.matchingDistanceThreshold}));
+    mapMaker_.setLoopClosing(loopclosing_);
+   }
+}
+#endif
+
+void SPTAM::setLoopCorrection(const Eigen::Isometry3d& T)
+{
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  lc_T_ = T; // 4x4 copy
+}
+
+/* NOTE: Pausing needs to be not blocking, because the tracker isnt actually a diferent thread. */
+void SPTAM::pause(){
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  isPaused_ = true;
+}
+
+void SPTAM::unPause(){
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  isPaused_ = false;
+}
+
+bool SPTAM::isPaused(){
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  return isPaused_;
+}
+
+bool SPTAM::isTracking(){
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  return isTracking_;
+}
+
+void SPTAM::setTracking(bool set){
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  isTracking_ = set;
+}
+
+void SPTAM::stopAddingKeyframes()
+{
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  isAddingKeyframesStopped_ = true;
+}
+
+void SPTAM::resumeAddingKeyframes()
+{
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  isAddingKeyframesStopped_ = false;
+}
+
+bool SPTAM::isAddingKeyframesStopped()
+{
+  std::lock_guard<std::mutex> lock(pause_mutex_);
+  return isAddingKeyframesStopped_;
 }

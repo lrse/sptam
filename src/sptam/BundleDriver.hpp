@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,18 +20,19 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
-
 #pragma once
 
-#include "StereoFrame.hpp"
+#include "g2o_driver.hpp"
 
 #include <g2o/core/sparse_optimizer.h>
 
@@ -41,24 +45,18 @@ class BundleDriver
 {
   public:
 
-    BundleDriver(
-      const cv::Matx33d& intrinsicLeft,
-      const cv::Matx33d& intrinsicRight,
-      const double stereo_baseline);
-
     /**
      * Add the data to be used in the next adjustment call ( Adjust )
      */
-    void SetData(const std::vector<StereoFrame*>& views, const std::vector<MapPoint*>& points);
-
-    /**
-     * Add the data to be used in the next adjustment call ( Adjust )
-     */
-    void SetData(const std::set<StereoFrame*>& adjustViews, const std::set<StereoFrame*>& fixedViews, const std::set<MapPoint*>& points);
+    void SetData(ConstIterable<sptam::Map::SharedKeyFrame>& adjustViews, ConstIterable<sptam::Map::SharedKeyFrame>& fixedViews);
 
     /**
      * Perform bundle adjustment for the given parameters.
      * return true if BA finish, false if it was interrupted
+     *
+     * @return
+     *   return True if the process was explicitly interrupted by the user
+     *   (using Break()). False otherwise.
      */
     bool Adjust(int maxIterations);
 
@@ -71,7 +69,7 @@ class BundleDriver
     /**
      * Handle Bad Measurements
      */
-    std::list< std::pair<StereoFrame*, MapPoint*> > GetBadMeasurements();
+    std::list< sptam::Map::SharedMeas > GetBadMeasurements();
 
     /**
      * Interrupt the bundle adjustment if there is one in progress.
@@ -80,67 +78,19 @@ class BundleDriver
      */
     void Break();
 
-    private:
-
-    // G2O optimizer
-    g2o::SparseOptimizer optimizer_;
-
-    // signal used by g2o to stop computing bundle adjustment
-    bool bundleAbortRequested_;
-    bool bundleAbortRequestedCopy_;
-
-  // projection variables
-
-    Eigen::Vector2d focal_length_;
-    Eigen::Vector2d principal_point_;
-
-    double baseline_;
-    double gainTerminateThreshold_;
-
     void Clear();
 
-  // helpers
+  private:
 
-    // The bundle adjuster does different accounting of keyframes and map points;
-    // Translation maps are stored:
-    struct IdMaps
-    {
-      std::map<MapPoint*, int> point_to_BundleId;
-      std::map<int, MapPoint*> BundleId_to_point;
-      std::map<StereoFrame*, int> view_to_BundleId;
-      std::map<int, StereoFrame*> BundleId_to_view;
-    };
+    G2ODriver g2o_driver_;
 
-    IdMaps id_maps_;
+    std::vector<G2ODriver::Vertex*> point_vertices_;
+    std::vector<G2ODriver::Vertex*> camera_vertices_;
+
+    std::vector< sptam::Map::SharedMeas > measurements_;
 
     /**
      * Add Measurement to the Bundle using the id_maps_
      */
     void AddMeasToBundle();
-
-  // Driver SPTAM -> G2O
-
-    g2o::OptimizableGraph::Vertex* BuildNewVertex(int vertex_id, const CameraPose& cameraPose, const bool isFixed);
-
-    g2o::OptimizableGraph::Vertex* BuildNewVertex(int vertex_id, const MapPoint& mapPoint, const bool marginalize ,const bool isFixed);
-
-    g2o::OptimizableGraph::Edge* BuildNewMonoEdge(
-      int pointId, int keyFrameId, const cv::Point2d& projection
-    );
-
-    g2o::OptimizableGraph::Edge* BuildNewMonoEdgeRight(
-      int pointId, int keyFrameId, const cv::Point2d& projection
-    );
-
-    g2o::OptimizableGraph::Edge* BuildNewStereoEdge(
-      int pointId, int keyFrameId,
-      const cv::Point2d& projectionLeft,
-      const cv::Point2d& projectionRight
-    );
-
-  // Driver G2O -> SPTAM
-
-    cv::Vec3d GetPoint( int pointId );
-
-    CameraPose GetPose( int keyFrameId );
 };

@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -38,25 +43,35 @@
 class MotionModel : public PosePredictor
 {
   public:
-
-    MotionModel(const cv::Point3d& initialPosition, const cv::Vec4d& initialOrientation);
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    MotionModel(const ros::Time& time, const Eigen::Vector3d& initialPosition, const Eigen::Quaterniond& initialOrientation, const Eigen::Matrix6d& initialCovariance);
 
     // Get the current camera pose.
-    void CurrentCameraPose(cv::Point3d& currentPosition, cv::Vec4d& currentOrientation) const override;
+    void currentPose(Eigen::Vector3d& currentPosition, Eigen::Quaterniond& currentOrientation, Eigen::Matrix6d& covariance) const override;
 
     // Predict the next camera pose.
-    void PredictNextCameraPose(cv::Point3d& predictedPosition, cv::Vec4d& predictedOrientation) const override;
+    void predictPose(const ros::Time& time, Eigen::Vector3d& predictedPosition, Eigen::Quaterniond& predictedOrientation, Eigen::Matrix6d& predictionCovariance) override;
 
     // Update the motion model given a new camera pose.
-    void UpdateCameraPose(const cv::Point3d& newPosition, const cv::Vec4d& newOrientation) override;
+    void updatePose(const ros::Time& time, const Eigen::Vector3d& newPosition, const Eigen::Quaterniond& newOrientation, const Eigen::Matrix6d& covariance) override;
+
+    // Reset the model given a new camera pose. Note: This method will be called when it happens an abrupt change in the pose (LoopClosing)
+    void applyCorrection(const Eigen::Matrix4d& correction) override;
 
   private:
 
-    cv::Point3d position_;
+    bool initialized_;
+
+    ros::Time last_update_;
+
+    Eigen::Vector3d position_;
 
     Eigen::Quaterniond orientation_;
 
-    cv::Vec3d linearVelocity_;
+    Eigen::Matrix6d poseCovariance_;
 
-    Eigen::Quaterniond angularVelocity_;
+    Eigen::Vector3d linearVelocity_;
+
+    double angular_velocity_angle_;
+    Eigen::Vector3d angular_velocity_axis_;
 };

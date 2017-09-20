@@ -1,7 +1,11 @@
 <launch>
 
   <!-- Set use_sim_time true for datasets-->
-  <param name="use_sim_time" value="true"/>
+  <param name="use_sim_time" value="true" />
+
+  <!-- Read S-PTAM parameters file -->
+  <rosparam command="load" ns="sptam" file="$(find sptam)/configurationFiles/mit.yaml" />
+  <param name="sptam/LoopDetectorVocabulary" value="$(find sptam)/bow_voc/DBoW2/brief_mit_malaga_vocabulary.yml.gz" />
 
   <!-- PR2 robot model (for visualization) -->
 <!--  <include file="$(find pr2_description)/robots/upload_pr2.launch" />-->
@@ -9,36 +13,52 @@
   <group ns="wide_stereo">
     <!-- Call stereo_image_proc to undistort and rectify images -->
     <node pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc">
-      <remap from="/stereo/left/image_raw"  to="/wide_stereo/left/image_raw"/>
-      <remap from="/stereo/right/image_raw"  to="/wide_stereo/right/image_raw"/>
-      <remap from="/stereo/left/camera_info"  to="/wide_stereo/left/camera_info"/>
-      <remap from="/stereo/right/camera_info"  to="/wide_stereo/right/camera_info"/>
+      <remap from="/stereo/left/image_raw"  to="/wide_stereo/left/image_raw" />
+      <remap from="/stereo/right/image_raw"  to="/wide_stereo/right/image_raw" />
+      <remap from="/stereo/left/camera_info"  to="/wide_stereo/left/camera_info" />
+      <remap from="/stereo/right/camera_info"  to="/wide_stereo/right/camera_info" />
     </node>
   </group>
 
-  <!-- path publisher. Transforms poses into path. -->
+  <!-- S-PTAM pose path publisher. Used for visualization. -->
   <node pkg="ros_utils" type="pose_to_path" name="sptam_path">
     <remap from="pose" to="sptam/robot/pose" />
     <remap from="path" to="sptam/robot/path" />
   </node>
 
 
-  <!-- Release -->
+  <!-- Nodelet Manager -->
+  <!--<node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen" clear_params="true"/>-->
+
+  <!-- Choose between Nodelet and Node S-PTAM -->
   <node pkg="sptam" type="sptam_node" name="sptam" output="screen" >
+  <!--<node pkg="nodelet" type="nodelet" name="sptam" args="load sptam/sptam_nodelet nodelet_manager" output="screen" clear_params="true" >-->
 
-    <!-- Read S-PTAM parameters file -->
-    <rosparam command="load" file="$(find sptam)/configurationFiles/mit.yaml" />
-
+    <param name="use_prediction" value="true" />
     <param name="approximate_sync" value="false" />
-    <param name="use_odometry" value="true"/>
-    <param name="odom_frame" value="/odom_combined"/>
-    <param name="camera_frame" value="/wide_stereo_gazebo_l_stereo_camera_optical_frame"/>
+    <param name="publish_on_fail" value="true" />
 
-    <!-- Remap topics  -->
-    <remap from="/stereo/left/image_rect"  to="/wide_stereo/left/image_rect_color"/>
-    <remap from="/stereo/right/image_rect"  to="/wide_stereo/right/image_rect_color"/>
-    <remap from="/stereo/left/camera_info"  to="/wide_stereo/left/camera_info"/>
-    <remap from="/stereo/right/camera_info"  to="/wide_stereo/right/camera_info"/>
+    <param name="prediction_frame" value="odom_combined" />
+    <param name="camera_frame" value="wide_stereo_gazebo_l_stereo_camera_optical_frame" />
+
+    <!-- input remaps -->
+
+    <remap from="/imu/data" to="/torso_lift_imu/data"/>
+
+    <remap from="/stereo/left/image_features" to="/wide_stereo/left/image_features"/>
+    <remap from="/stereo/right/image_features" to="/wide_stereo/right/image_features"/>
+    <remap from="/stereo/left/camera_info" to="/wide_stereo/left/camera_info"/>
+    <remap from="/stereo/right/camera_info" to="/wide_stereo/right/camera_info"/>
+
+    <!-- when debugging the node subscribes to the images -->
+
+    <remap from="/stereo/left/image_rect" to="/wide_stereo/left/image_rect_color"/>
+    <remap from="/stereo/right/image_rect" to="/wide_stereo/right/image_rect_color"/>
+    <remap from="/stereo/left/camera_info" to="/wide_stereo/left/camera_info"/>
+    <remap from="/stereo/right/camera_info" to="/wide_stereo/right/camera_info"/>
+
+    <!-- Remap Odometry message -->
+    <remap from="robot/pose"  to="odom" />
 
   </node>
 

@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,37 +20,36 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
-
 #pragma once
 
-#include <opencv2/core/core.hpp>
 #include <eigen3/Eigen/Geometry>
 
-class CameraPose {
+namespace Eigen
+{
+  typedef Matrix<double, 6, 6> Matrix6d;
+}
 
+class CameraPose
+{
   public:
-
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     CameraPose();
-
-    /**
-     * Build a camera pose from translation and rotation represented
-     * as a 3x3 Matrix.
-     */
-    CameraPose(const cv::Vec3d& translation, const cv::Matx33d& rotation);
 
     /**
      * Build a camera pose from a position and an orientation represented
      * as a quaternion.
      */
-    CameraPose(const cv::Point3d& position, const cv::Vec4d& qOrientation);
+    CameraPose(const Eigen::Vector3d& position, const Eigen::Quaterniond& orientation, const Eigen::Matrix6d& covariance);
 
     /**
      * Takes the representation of a point given in World coordinate
@@ -62,56 +64,30 @@ class CameraPose {
      * reference frame, and returns the same point in World coordinate
      * system (or whichever system the camera pose is relative to).
      */
-    inline cv::Point3d ToWorld( cv::Point3d x ) const
-    { return orientationMatrix_ * x + cv::Point3d( position_ ); }
+    inline Eigen::Vector3d ToWorld( const Eigen::Vector3d& x ) const
+    { return orientationMatrix_ * x + position_; }
 
-    /*inline cv::Vec3d GetTranslation() const
-    { return translation_; }*/
-
-    inline cv::Point3d GetPosition() const
+    inline const Eigen::Vector3d& GetPosition() const
     { return position_; }
 
-    inline cv::Matx33d GetOrientationMatrix() const
+    inline const Eigen::Matrix3d& GetOrientationMatrix() const
     { return orientationMatrix_; }
 
-    /*inline const cv::Matx33d& GetRotationMatrix() const
-    { return rotation_; }*/
+    inline const Eigen::Quaterniond& GetOrientationQuaternion() const
+    { return orientation_; }
 
-    inline cv::Vec4d GetOrientationQuaternion() const
-    { return eigen2cv(orientation_);/*rotationMatrixToQuaternion( orientation_ );*/ }
-
-    /*inline cv::Vec4d GetRotationQuaternion() const
-    { return rotationMatrixToQuaternion( rotation_ ); }*/
-
-    cv::Matx34d GetTransformation() const;
-
-    cv::Matx44d GetSE3Matrix() const;
+    inline const Eigen::Matrix6d& covariance() const
+    { return covariance_; }
 
   private:
 
-    cv::Point3d position_;
+    Eigen::Vector3d position_;
 
     Eigen::Quaterniond orientation_;
 
-    //cv::Matx33d orientation_;
+    Eigen::Matrix3d orientationMatrix_;
 
-    cv::Vec3d translation_;
-
-    //cv::Matx33d rotation_;
-
-    cv::Matx33d orientationMatrix_, rotationMatrix_;
-
-  // Eigen <-> OpenCV quaternion convertion
-
-    inline static cv::Vec4d eigen2cv(const Eigen::Quaterniond& q)
-    {
-      return cv::Vec4d( q.w(), q.x(), q.y(), q.z() );
-    }
-
-    inline static Eigen::Quaterniond cv2eigen(const cv::Vec4d& q)
-    {
-      return Eigen::Quaterniond(q[0], q[1], q[2], q[3]);
-    }
+    Eigen::Matrix6d covariance_;
 };
 
-std::ostream& operator << (std::ostream& os, const CameraPose& cameraPose);
+std::ostream& operator << ( std::ostream& os, const CameraPose& cameraPose);

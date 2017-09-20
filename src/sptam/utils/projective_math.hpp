@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,36 +20,26 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
+#pragma once
 
-#ifndef _PROJECTIVE_MATH_HPP
-#define _PROJECTIVE_MATH_HPP
-
-#include <opencv2/core/core.hpp>
-#include <opencv2/calib3d/calib3d.hpp>  // decomposeProjectionMatrix
-
-/**
- * Extract the focal length from a intrinsic parameter matrix
- */
-inline cv::Point2d getFocalLength(const cv::Matx33d& intrinsic)
-{
-  return cv::Point2d(intrinsic(0, 0), intrinsic(1, 1));
-}
-
-/**
- * Extract the principal point from a intrinsic parameter matrix
- */
-inline cv::Point2d getPrincipalPoint(const cv::Matx33d& intrinsic)
-{
-  return cv::Point2d(intrinsic(0, 2), intrinsic(1, 2));
-}
+#include "opencv2/core/version.hpp"
+#if CV_MAJOR_VERSION == 2
+  #include <opencv2/core/core.hpp>
+  #include <opencv2/calib3d/calib3d.hpp>  // decomposeProjectionMatrix
+#elif CV_MAJOR_VERSION == 3
+  #include <opencv2/core.hpp>
+  #include <opencv2/calib3d.hpp>  // decomposeProjectionMatrix
+#endif
 
 /**
  * Transform a 3D point in inhomogeneous representation to homogeneous
@@ -86,6 +79,17 @@ inline cv::Point2d toInHomo(const cv::Vec3d& p)
 inline cv::Point2d project(const cv::Matx34d& projection, const cv::Point3d& p)
 {
   return toInHomo( projection * toHomo( p ) );
+}
+
+inline std::vector<cv::Point2d> project(const cv::Matx34d& projection, const std::vector<cv::Point3d>& points)
+{
+  std::vector<cv::Point2d> ret;
+  ret.reserve( points.size() );
+
+  for ( auto point : points )
+    ret.push_back( project( projection, point ) );
+
+  return ret;
 }
 
 /**
@@ -209,14 +213,3 @@ inline cv::Matx33d ComputeFundamentalMat(const cv::Matx34d& projectionC1, const 
     intrinsicC2, rotationC2, translationC2
   );
 }
-
-/**
- * Return the Field Of View angle for a dimention of the camera,
- * given the focal length and size of the image in that dimention.
- */
-inline double computeFOV(const double focal_length, const double image_size)
-{
-  return 2 * atan(image_size / (2 * focal_length)) * 180 / M_PI;
-}
-
-#endif // _PROJECTIVE_MATH_HPP

@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -26,69 +31,62 @@
  * University of Buenos Aires
  */
 #pragma once
+#include "Match.hpp"
 
-/**
- * @brief AddKeyFrameDistancePolicy
- * add a keyframe taking into account the distante w.r.t the last keyframe.
- * @param frame
- * @param map
- * @param keyFrameDistanceThreshold
- * @param framesBetweenKeyFrames
- * @param frames_since_last_kf
- * @return
- */
-inline bool AddKeyFrameDistancePolicy(const StereoFrame& frame, const sptam::Map& map, const int keyFrameDistanceThreshold)
+// ---------------------------------------------------------------------
+// Helper functions
+
+inline bool compareX(const Match& i, const Match& j)
 {
 
-  const CameraPose& currentCameraPose = frame.GetCameraLeft().GetPose();
+  const Measurement& i_meas = i.measurement;
+  const Measurement& j_meas = j.measurement;
 
-  const StereoFrame& closestKeyFrame = map.GetCurrentKeyFrame();
+  const std::vector<cv::KeyPoint>& i_keypoints = i_meas.GetKeypoints();
+  const std::vector<cv::KeyPoint>& j_keypoints = j_meas.GetKeypoints();
 
-  cv::Point3d v3Diff = closestKeyFrame.GetPosition() - currentCameraPose.GetPosition();
+  return i_keypoints[0].pt.x < j_keypoints[0].pt.x;
+}
+
+inline int getMinX(const std::list<Match>& measurements)
+{
+  const Match min = *min_element(measurements.begin(), measurements.end(), &compareX);
+  return min.measurement.GetKeypoints()[0].pt.x;
+}
+
+inline int getMaxX(const std::list<Match>& measurements)
+{
+  const Match min = *max_element(measurements.begin(), measurements.end(), &compareX);
+  return min.measurement.GetKeypoints()[0].pt.x;
+}
+
+// ---------------------------------------------------------------------
+// Actual policies
+
+/**
+ * @brief TODO
+ */
+/*inline bool AddKeyFrameDistancePolicy(
+  const StereoFrame& frame,
+  const StereoFrame& closestKeyFrame,
+  const int keyFrameDistanceThreshold
+){
+  Eigen::Vector3d v3Diff = closestKeyFrame.GetPosition() - frame.GetPosition();
   double distanceToClosestKeyFrame = sqrt( v3Diff.dot( v3Diff ) );
 
   // Heuristics to check if a key-frame should be added to the map
   return ( keyFrameDistanceThreshold < distanceToClosestKeyFrame );
-
-}
-
-inline bool compareX(std::pair<MapPoint*, Measurement> i, std::pair<MapPoint*, Measurement> j)
-{
-
-  Measurement& i_meas = i.second;
-  Measurement& j_meas = j.second;
-
-  const cv::Point2d& i_projection = i_meas.GetProjection();
-  const cv::Point2d& j_projection = j_meas.GetProjection();
-
-  return i_projection.x < j_projection.x;
-}
-
-inline int getMinX(std::map<MapPoint*, Measurement> mymap)
-{
-  std::pair<MapPoint*, Measurement> min = *min_element(mymap.begin(), mymap.end(),
-                                                 &compareX);
-  return min.second.GetProjection().x;
-}
-
-inline int getMaxX(std::map<MapPoint*, Measurement> mymap)
-{
-  std::pair<MapPoint*, Measurement> min = *max_element(mymap.begin(), mymap.end(),
-                                                 &compareX);
-  return min.second.GetProjection().x;
-}
+}*/
 
 /**
- * @brief AddKeyFrameImageCoverPolicy
- * add a keyframe taking into account the percentage of image free of features matched
- * @param frame
- * @return
+ * @brief TODO
  */
-inline bool AddKeyFrameImageCoverPolicy( const StereoFrame& frame,
-                                         const double imageWidth,
-                                         const double coverThreshold) {
-
-  const std::map<MapPoint*, Measurement> &measurements = frame.GetMeasurementsLeft();
+/*inline bool AddKeyFrameImageCoverPolicy(
+  const StereoFrame& frame,
+  const double imageWidth,
+  const double coverThreshold
+){
+  const std::map<IPointData*, Measurement>& measurements = frame.GetMeasurements();
 
   double minX = getMinX(measurements);
   double maxX = getMaxX(measurements);
@@ -96,19 +94,16 @@ inline bool AddKeyFrameImageCoverPolicy( const StereoFrame& frame,
   double imageAreaMeasurementFree = (minX + (imageWidth - maxX)) / imageWidth;
 
   return imageAreaMeasurementFree > coverThreshold;
-}
+}*/
 
 /**
- * @brief AddKeyFrameFeaturesPolicy
- * add a keyframe taking into account the percentege of keypoints matched over the total
- * @param frame
- * @return
+ * @brief TODO
  */
-inline bool AddKeyFrameFeaturesPolicy( const StereoFrame& frame,
-                                       const double featurePercentageThreshold) {
-
-
-  double nMatches = frame.GetMeasurementsLeft().size(); // casting to double
+/*inline bool AddKeyFrameFeaturesPolicy(
+  const StereoFrame& frame,
+  const double featurePercentageThreshold
+){
+  double nMatches = frame.GetMeasurements().size(); // casting to double
   // declare variables
   std::vector<cv::KeyPoint> unMatchedKeyPoints;
   cv::Mat descriptors;
@@ -117,20 +112,22 @@ inline bool AddKeyFrameFeaturesPolicy( const StereoFrame& frame,
   size_t unMatches = unMatchedKeyPoints.size();
   double totalKeypoints = nMatches + unMatches; // casting to double
 
-
   return (nMatches / totalKeypoints) < featurePercentageThreshold;
-}
+}*/
 
+/**
+ * @brief TODO
+ */
+inline bool AddKeyFrameTrackingFeaturesPolicy(
+  const StereoFrame& frame,
+  const std::list<Match>& measurements,
+  const sptam::Map::KeyFrame& closestKeyFrame,
+  const double featurePercentageThreshold
+){
+  double nMatches = measurements.size(); // casting to double
+  double nReferenceKeyFrameMatches = closestKeyFrame.measurements().size(); // casting to double
 
-inline bool AddKeyFrameTrackingFeaturesPolicy( const StereoFrame& frame,
-                                               const sptam::Map& map,
-                                               const double featurePercentageThreshold ) {
-
-  double nMatches = frame.GetMeasurementsLeft().size(); // casting to double
-  const StereoFrame& closestKeyFrame = map.GetCurrentKeyFrame();
-  double nReferenceKeyFrameMatches = closestKeyFrame.GetMeasurementsLeft().size();
-
-
+  //std::cout << "frame tracks " << nMatches << " and reference frame tracks " << nReferenceKeyFrameMatches << std::endl;
 
   return (nMatches / nReferenceKeyFrameMatches) < featurePercentageThreshold;
 }

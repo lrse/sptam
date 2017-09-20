@@ -1,0 +1,31 @@
+FeatureDetector:
+
+  Name: 'ORB'
+
+  nFeatures: 200
+  scaleFactor: 1.2
+  nLevels: 1
+  edgeThreshold: 31
+
+DescriptorExtractor:
+  Name: 'BRIEF'
+  bytes: 32
+
+DescriptorMatcher:
+  # normType: use
+  #  - NORM_L1 or NORM_L2 for SIFT and SURF descriptors
+  #  - NORM_HAMMING for ORB, BRISK, and BRIEF
+  #  - NORM_HAMMING2 should be used with ORB when WTA_K==3 or 4
+  Name: 'BruteForce-Hamming'
+  crossCheck: false
+
+MatchingCellSize: 15
+MatchingNeighborhood: 2
+MatchingDistance: 25
+EpipolarDistance: 1
+FrustumNearPlaneDist: 0.1
+FrustumFarPlaneDist: 50.0
+BundleAdjustmentActiveKeyframes: 10
+minimumTrackedPointsRatio: 0.9
+
+LoopDetectorVocabulary: 'SPTAM_PATH/bow_voc/DBoW2/brief_mit_malaga_vocabulary.yml.gz'

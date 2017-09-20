@@ -1,7 +1,10 @@
 /**
  * This file is part of S-PTAM.
  *
- * Copyright (C) 2015 Taihú Pire and Thomas Fischer
+ * Copyright (C) 2013-2017 Taihú Pire
+ * Copyright (C) 2014-2017 Thomas Fischer
+ * Copyright (C) 2016-2017 Gastón Castro
+ * Copyright (C) 2017 Matias Nitsche
  * For more information see <https://github.com/lrse/sptam>
  *
  * S-PTAM is free software: you can redistribute it and/or modify
@@ -17,8 +20,10 @@
  * You should have received a copy of the GNU General Public License
  * along with S-PTAM. If not, see <http://www.gnu.org/licenses/>.
  *
- * Authors:  Taihú Pire <tpire at dc dot uba dot ar>
- *           Thomas Fischer <tfischer at dc dot uba dot ar>
+ * Authors:  Taihú Pire
+ *           Thomas Fischer
+ *           Gastón Castro
+ *           Matías Nitsche
  *
  * Laboratory of Robotics and Embedded Systems
  * Department of Computer Science
@@ -27,14 +32,13 @@
  */
 #pragma once
 
-#include <mutex>
-
 #include "MapPoint.hpp"
 #include "StereoFrame.hpp"
+#include "Measurement.hpp"
+#include "utils/CovisibilityGraph.hpp"
+#include "utils/Iterable.hpp"
 
-// TODO esto debería ser un parámetro del programa creo.
-// Lo pongo acá porque me da fiaca, perdón :( (thomas)
-#define MIN_NUM_MEAS 10
+#include <boost/thread/shared_mutex.hpp>
 
 namespace sptam
 {
@@ -48,61 +52,65 @@ class Map
 {
   public:
 
-    Map();
+    typedef CovisibilityGraph<StereoFrame, MapPoint, Measurement> Graph;
 
-    // Add a KeyFrame to the Map
-    void AddKeyFrame(StereoFrame* keyFrame);
+    typedef Graph::KeyFrame KeyFrame;
+    typedef Graph::MapPoint Point;
+    typedef Graph::Measurement Meas;
 
-    // Add a MapPoint to the Map
-    void AddMapPoint(MapPoint* mapPoint);
+    typedef Graph::SharedKeyFrame SharedKeyFrame;
+    typedef Graph::SharedMapPoint SharedPoint;
+    typedef Graph::SharedMeasurement SharedMeas;
 
-    // Add a bunch of new points to the map
-    void AddMapPoints(const std::vector<MapPoint*>& new_points);
+    typedef Graph::SharedMapPointSet SharedMapPointSet;
+    typedef Graph::SharedKeyFrameSet SharedKeyFrameSet;
+    typedef Graph::SharedMeasurementSet SharedMeasurementSet;
 
-    // 
-    inline StereoFrame* GetCurrentKeyFrame()
-    { return keyFrames_.back(); }
+    typedef Graph::SharedMapPointList SharedMapPointList;
+    typedef Graph::SharedKeyFrameList SharedKeyFrameList;
 
-		inline const StereoFrame& GetCurrentKeyFrame() const
-    { return *keyFrames_.back(); }
+//    typedef Graph::MapPointRefList PointRefs;
 
-    // return the total number of mapPoints
-    inline size_t nMapPoints() const
-    { return mapPoints_.size(); }
+    SharedKeyFrame AddKeyFrame(const StereoFrame& frame)
+    { return graph_.addKeyFrame( frame ); }
 
-    // return the total number of KeyFrames
-    inline size_t nKeyFrames() const
-    { return keyFrames_.size(); }
+    void RemoveKeyFrame(const SharedKeyFrame& keyFrame)
+    { graph_.removeKeyFrame( keyFrame ); }
 
-    inline const std::vector<MapPoint*>& GetMapPoints() const
-    { return mapPoints_; }
+    SharedPoint AddMapPoint(const MapPoint& mapPoint)
+    { return graph_.addMapPoint( mapPoint ); }
 
-    inline const std::vector<StereoFrame*>& GetKeyFrames() const
-    { return keyFrames_; }
+    void RemoveMapPoint(const SharedPoint& mapPoint)
+    { graph_.removeMapPoint( mapPoint ); }
 
-    void RemoveBadPoints();
+    void addMeasurement(SharedKeyFrame& keyFrame, SharedPoint& mapPoint, const Measurement& measurement)
+    { graph_.addMeasurement( keyFrame, mapPoint, measurement ); }
 
-    void RemoveBadKeyFrames();
+    void removeMeasurement(const SharedMeas& measurement)
+    { graph_.removeMeasurement( measurement ); }
 
-    // S-PTAM will try to access the Point structure from the Tracker,
-    // to localize incoming frames, and in parallell may try to update
-    // the refined structure from the Mapper.
-    // This mutex should be used to allow acces in such cases.
-    mutable std::mutex points_mutex_;
+    inline void getLocalMap(const sptam::Map::SharedMapPointSet& trackedPoints, SharedMapPointSet& localMap, SharedKeyFrameSet& localKeyFrames, SharedKeyFrame& referenceKeyFrame )
+    { graph_.getLocalMap( trackedPoints, localMap, localKeyFrames, referenceKeyFrame ); }
+
+    const SharedKeyFrameList& getKeyframes() const
+    { return graph_.getKeyframes(); }
+
+    const SharedMapPointList& getMapPoints() const
+    { return graph_.getMapPoints(); }
+
+    //void RemoveBadPoints();
+
+    /* Map points use an internal locking system, so they're thread-safe.
+     * Yet the map isn't, so we use an external mutex for
+     * general map manipulation.
+     * Tracking, Mapping and LoopClosing have to ask for the lock when:
+     * Read-Lock: Get keyframes/mappoints, localMap or asking for any internal parameter.
+     * Write-Lock: Adding points/frames, Remove points/frames */
+    mutable boost::shared_mutex map_mutex_; // Map and Keyframe mutex
 
   private:
 
-    std::vector<StereoFrame*> keyFrames_;
-
-    std::vector<MapPoint*> mapPoints_;
-
-    // Id pools for keyframes and mapPoints
-    // TODO poner algo mas copado
-    int lastMapPointId_;
-    int lastKeyFrameId_;
-
-    inline bool IsBad(StereoFrame* keyFrame)
-    { return keyFrame->GetNumberOfMeasurements() < MIN_NUM_MEAS; }
+    Graph graph_;
 };
 
 } // namespace sptam
