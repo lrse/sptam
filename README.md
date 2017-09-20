@@ -92,10 +92,8 @@ If you use S-PTAM in an academic work, please cite:
 # Disclaimer
 This site and the code provided here are under active development. Even though we try to only release working high quality code, this version might still contain some issues. Please use it with caution.
 
-<a name="prerequisites"/>
 # Prerequisites (dependencies)
 
-<a name="ros"/>
 ## ROS
 
 We have tested S-PTAM in Ubuntu 16.04 with ROS Kinetic.
@@ -104,14 +102,12 @@ To install ROS (Kinetic) use the following command:
 
 `sudo apt-get install ros-kinetic-desktop`
 
-<a name="rosUtils"/>
 ## ros-utils (ROS package)
 
 Install our [ros-utils](https://github.com/lrse/ros-utils) library from the source code provided in  
 
 `git clone git@github.com:lrse/ros-utils.git`
 
-<a name="g2o"/>
 ## g2o
 
 Install [g2o](https://github.com/RainerKuemmerle/g2o) library from the source code provided in  
@@ -122,7 +118,6 @@ Tested until commit [4b9c2f5b68d14ad479457b18c5a2a0bce1541a90](https://github.co
 
 `git checkout 4b9c2f5b68d14ad479457b18c5a2a0bce1541a90`
 
-<a name="loopClosureDependencies"/>
 ## Loop Closure dependencies
 
 Only required when USE_LOOPCLOSURE flag is defined. 
@@ -132,7 +127,6 @@ are available through a git submodule at the bow_voc directory
 
 `git submodule update --init --recursive`
 
-<a name="dbow2"/>
 ### DBoW2
 
 Install [DBoW2](https://github.com/dorian3d/DBoW2) library from source code
@@ -143,7 +137,6 @@ Tested until commit [82401cad2cfe7aa28ee6f6afb01ce3ffa0f59b44](https://github.co
 
 `git checkout 82401cad2cfe7aa28ee6f6afb01ce3ffa0f59b44`
 
-<a name="opengv"/>
 ## OpenGV
 
 Install [OpenGV](https://github.com/laurentkneip/opengv) library from source code
@@ -158,10 +151,8 @@ Tested until commit [2e2d21917fd2fb75f2134e6d5be7a2536cbc7eb1](https://github.co
 
 `git clone git@github.com:lrse/sptam.git`
 
-<a name="rosPackage"/>
 # ROS Package
 
-<a name="compilation"/>
 ## Compilation
 
 `catkin_make --pkg sptam -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSINGLE_THREAD=OFF -DSHOW_TRACKED_FRAMES=ON -DSHOW_PROFILING=ON -DPARALLELIZE=ON`
@@ -172,12 +163,10 @@ To activate Loop Closing capabilities (requires DBoW2 and OpenGV dependencies).
 
 For more information about compilation flags see [CMAKE flags](#cmakeFlags) section.
 
-<a name="tutorials"/>
 ## Tutorials
 
 We provide some examples of how to run S-PTAM with the most popular stereo datasets
 
-<a name="kitti"/>
 ## KITTI dataset
 
 1. Download the KITTI rosbag [kitti_00.bag](http://www6.in.tum.de/~kloses/rvc/kitti_bags/kitti_00.bag) provided in   [KITTI rosbag files](http://www6.in.tum.de/~kloses/rvc/kitti_bags/)  
@@ -199,7 +188,6 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
 
     `roslaunch sptam kitti.launch`  
 
-<a name="euroc"/>
 ## EuRoc MAV dataset
 
 1. Download the EuRoc rosbag [Machine Hall 01](http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/machine_hall/MH_01_easy/MH_01_easy.bag) provided in   [EuRoc MAV Web Page](http://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets)  
@@ -223,7 +211,6 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
 
     `roslaunch sptam euroc.launch`  
 
-<a name="mit"/>
 ## MIT Stata Center dataset
 
 1. Download the MIT Stata Center rosbag [2012-01-27-07-37-01.bag](http://infinity.csail.mit.edu/data/2012/2012-01-27-07-37-01.bag) provided in   [MIT Stata Center Web Page](http://projects.csail.mit.edu/stata/downloads.php)  
@@ -243,7 +230,6 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
     `roslaunch sptam mit.launch`  
 
 
-<a name="level7"/>
 ## Indoor Level 7 S-Block dataset
 
 1. Download the Level7 rosbag [level07_20_05_12_trunc.bag (3747 Frame Subset)](https://wiki.qut.edu.au/display/cyphy/Indoor+Level+7+S-Block+Dataset) provided in [Indoor Level 7 S-Block Dataset Web Page](https://wiki.qut.edu.au/display/cyphy/Indoor+Level+7+S-Block+Dataset)  
@@ -262,10 +248,8 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
     `roslaunch sptam level7.launch`  
 
 
-<a name="nodeInformation"/>
 ## Node Information
 
-<a name="subscribed"/>
 ### Subscribed Topics
 
 Camera topics should provide undistorted and stereo-rectified images. Consider using the [image_proc](http://wiki.ros.org/stereo_image_proc) node.
@@ -286,7 +270,6 @@ Undistorted and stereo-rectified image stream from the right camera.
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 Right camera metadata.
 
-<a name="published"/>
 ### Published Topics
 
 global_map ([sensor\_msgs/PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html))  
@@ -319,7 +302,6 @@ path ([nav\_msgs/Path](http://docs.ros.org/api/nav_msgs/html/msg/Path.html))
 Path navigated by the robot, following the poses computed by the tracker.
 -->
 
-<a name="rosParameters"/>
 ### ROS Parameters
 
 ~use\_prediction (bool, default: false)  
@@ -358,7 +340,6 @@ Name for the published map frame.
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 This is the frame that the map frame will be aligned to when initializing S-PTAM. In other word, the initial pose of the reference\_frame defines the map origin.
 
-<a name="coordinatesSystems"/>
 ### Involved Coordinates Systems
 
 Example of common used coordinate systems. Here, reference_frame follows the base_frame axis representation.
@@ -371,7 +352,6 @@ The camera correction computed by S-PTAM is applied between the map_frame and th
 
 The camera correction computed by S-PTAM is applied between the map_frame and the prediction_frame (pink doted line).
 
-<a name="cmakeFlags"/>
 # CMAKE flags
 
 SINGLE_THREAD=([ON|OFF], default: OFF)  
@@ -394,7 +374,6 @@ USE_LOOPCLOSURE=([ON|OFF], default: OFF)
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 Activates loop closing capabilities of S-PTAM. Requires DBoW2 and OpenGV dependencies. Set it OFF to use S-PTAM without loop detection.
 
-<a name="parameters"/>
 # S-PTAM Parameters
 
 ~FeatureDetector/Name: (string, default: "GFTT")  
@@ -444,12 +423,10 @@ Number of keyframes to be adjusted by the local bundle adjustment (LBA) in the l
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 Ratio of tracked points that the current frame should have with respect to the closest keyframe to be selected as a keyframe used by the keyframe selection strategy.
 
-<a name="standalone"/>
 # Standalone
 
 In `standalone` directory, we include an example of code that does not use ROS framework (but it still depends of some ROS libraries). It can be useful for debugging or for those who are not familiar with ROS.
 
-<a name="standaloneCompilation"/>
 ## Compilation
 
 On `standalone` directory do:
@@ -460,7 +437,7 @@ On `standalone` directory do:
 
 3. `cmake .. -DCMAKE_BUILD_TYPE=Release -DSHOW_TRACKED_FRAMES=ON -DUSE_LOOPCLOSURE=ON -DSHOW_PROFILING=ON`
 
-## Run (example with KITTI dataset)
+## Run
 
 Download the KITTI gray scale stereo images from [KITTI dataset](http://www.cvlibs.net/datasets/kitti/eval_odometry.php)
 
