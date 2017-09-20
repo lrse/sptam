@@ -45,7 +45,6 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
 	- [Compilation](#standalaoneCompilation)
 	- [Run](#run)
 
-<a name="license"/>
 # License
 
 S-PTAM is released under GPLv3 license.
@@ -90,7 +89,6 @@ If you use S-PTAM in an academic work, please cite:
   doi = {10.1109/IROS.2015.7353546}  
  }
 
-<a name="disclaimer"/>
 # Disclaimer
 This site and the code provided here are under active development. Even though we try to only release working high quality code, this version might still contain some issues. Please use it with caution.
 
@@ -462,7 +460,6 @@ On `standalone` directory do:
 
 3. `cmake .. -DCMAKE_BUILD_TYPE=Release -DSHOW_TRACKED_FRAMES=ON -DUSE_LOOPCLOSURE=ON -DSHOW_PROFILING=ON`
 
-<a name="run"/>
 ## Run (example with KITTI dataset)
 
 Download the KITTI gray scale stereo images from [KITTI dataset](http://www.cvlibs.net/datasets/kitti/eval_odometry.php)
