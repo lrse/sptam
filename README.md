@@ -23,7 +23,9 @@ Proc. of The International Conference on Intelligent Robots and Systems (IROS), 
     - [ros-utils](#ros-utils)
     - [g2o](#g2o)
     - [Loop Closure Dependencies](#loop-closure-dependencies)
+      - [DLib](#dlib)
       - [DBoW2](#dbow2)
+	  - [DLoopDetector](#dloopdetector)
       - [OpenGV](#opengv)
   - [Installation](#installation)
   - [ROS Package](#ros-package)
@@ -126,6 +128,18 @@ are available through a git submodule at the bow_voc directory
 
 `git submodule update --init --recursive`
 
+
+### DLib
+
+Install [DLib](https://github.com/dorian3d/DLib) library from source code
+
+`git clone git@github.com:dorian3d/DLib.git`
+
+Tested until commit [70089a38056e8aebd5a2ebacbcb67d3751433f32](https://github.com/dorian3d/DLib/commit/70089a38056e8aebd5a2ebacbcb67d3751433f32)
+
+`git checkout 70089a38056e8aebd5a2ebacbcb67d3751433f32`
+
+
 ### DBoW2
 
 Install [DBoW2](https://github.com/dorian3d/DBoW2) library from source code
@@ -135,6 +149,18 @@ Install [DBoW2](https://github.com/dorian3d/DBoW2) library from source code
 Tested until commit [82401cad2cfe7aa28ee6f6afb01ce3ffa0f59b44](https://github.com/dorian3d/DBoW2/commit/82401cad2cfe7aa28ee6f6afb01ce3ffa0f59b44)
 
 `git checkout 82401cad2cfe7aa28ee6f6afb01ce3ffa0f59b44`
+
+### DLoopDetector
+
+Install [DBoW2](https://github.com/dorian3d/DBoW2) library from source code
+
+`git clone git@github.com:dorian3d/DLoopDetector.git`
+
+Tested until commit [8e62f8ae84d583d9ab67796f779272b0850571ce](https://github.com/dorian3d/DLoopDetector/commit/8e62f8ae84d583d9ab67796f779272b0850571ce)
+
+`git checkout 8e62f8ae84d583d9ab67796f779272b0850571ce`
+
+
 
 ## OpenGV
 
