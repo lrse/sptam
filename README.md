@@ -152,7 +152,7 @@ Tested until commit [82401cad2cfe7aa28ee6f6afb01ce3ffa0f59b44](https://github.co
 
 ### DLoopDetector
 
-Install [DBoW2](https://github.com/dorian3d/DBoW2) library from source code
+Install [DLoopDetector](https://github.com/dorian3d/DBoW2) library from source code
 
 `git clone git@github.com:dorian3d/DLoopDetector.git`
 
