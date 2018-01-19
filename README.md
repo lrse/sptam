@@ -194,7 +194,7 @@ We provide some examples of how to run S-PTAM with the most popular stereo datas
 
 ### KITTI dataset
 
-1. Download the KITTI rosbag [kitti_00.bag](http://cifasis-conicet.gov.ar/taihu/datasets/KITTI/kitti_00.bag) provided in   [KITTI rosbag files](http://cifasis-conicet.gov.ar/taihu/datasets/KITTI/)  
+1. Download the KITTI rosbag [kitti_00.bag](http://cifasis-conicet.gov.ar/taihu/datasets/KITTI/bags/kitti_00.bag) provided in   [KITTI rosbag files](http://cifasis-conicet.gov.ar/taihu/datasets/KITTI/bags/)  
 
 2. Uncompress the dataset  
 
