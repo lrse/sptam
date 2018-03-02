@@ -30,12 +30,12 @@
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
-
 #pragma once
 
 #include "Camera.hpp"
 #include "Measurement.hpp"
 #include "ImageFeatures.hpp"
+#include "utils/eigen_alignment.hpp"
 
 #include "opencv2/core/version.hpp"
 #if CV_MAJOR_VERSION == 2
@@ -62,7 +62,7 @@ class Frame
     inline const CameraPose& GetCameraPose() const
     { return camera_.GetPose(); }
 
-    inline cv::Matx34d GetProjection() const
+    inline Eigen::Matrix34d GetProjection() const
     { return camera_.GetProjection(); }
 
     inline void UpdateCameraPose(const CameraPose& cameraPose)
@@ -76,7 +76,7 @@ class Frame
      * Match a set of 3D points with their respective descriptors
      * to the features in the current frame.
      */
-    std::list<std::pair<size_t, size_t> > FindMatches(const std::vector<cv::Point3d>& points,
+    std::list<std::pair<size_t, size_t> > FindMatches(const std::aligned_vector<Eigen::Vector3d>& points,
       const std::vector<cv::Mat>& descriptors,
       const cv::DescriptorMatcher& descriptorMatcher,
       const double matchingDistanceThreshold,

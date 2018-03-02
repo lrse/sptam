@@ -40,7 +40,7 @@
 class FrustumCulling
 {
   public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     FrustumCulling(
       const Eigen::Vector3d& position, const Eigen::Quaterniond& orientation,
       double horizontalFOV, double verticalFOV, double nearPlaneDist, double farPlaneDist

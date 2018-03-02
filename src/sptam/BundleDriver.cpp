@@ -70,20 +70,15 @@ class CameraVertexData : public G2ODriver::VertexData
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void BundleDriver::SetData(ConstIterable<sptam::Map::SharedKeyFrame>& adjustViews, ConstIterable<sptam::Map::SharedKeyFrame>& fixedViews)
+void BundleDriver::SetData(ConstIterable<sptam::Map::SharedKeyFrame>&& adjustViews, ConstIterable<sptam::Map::SharedKeyFrame>&& fixedViews)
 {
-  // clear all previous information
-  Clear();
-
   std::map<sptam::Map::Point*, G2ODriver::Vertex*> point_to_vertex;
-  std::map<sptam::Map::KeyFrame*, G2ODriver::Vertex*> view_to_vertex;
 
   // Add the non-fixed keyframes' poses to the bundle adjuster.
   for ( const sptam::Map::SharedKeyFrame& keyFrame : adjustViews )
   {
-    G2ODriver::Vertex* camera_vertex = g2o_driver_.AddVertex( keyFrame->GetCameraPose(), keyFrame->getRectifiedCameraParameters(), false, new CameraVertexData( keyFrame ) );
+    G2ODriver::Vertex* camera_vertex = minimizer_.AddVertex( keyFrame->GetCameraPose(), keyFrame->getRectifiedCameraParameters(), false, new CameraVertexData( keyFrame ) );
     camera_vertices_.push_back( camera_vertex );
-    view_to_vertex[ keyFrame.get() ] = camera_vertex;
 
     for ( sptam::Map::SharedMeas& meas : keyFrame->measurements() )
     {
@@ -100,13 +95,13 @@ void BundleDriver::SetData(ConstIterable<sptam::Map::SharedKeyFrame>& adjustView
       // if not, create it.
       catch (const std::out_of_range& err)
       {
-        point_vertex = g2o_driver_.AddVertex( *mapPoint, true, false, new PointVertexData( mapPoint ) );
+        point_vertex = minimizer_.AddVertex( *mapPoint, true, false, new PointVertexData( mapPoint ) );
         point_vertices_.push_back( point_vertex );
 
         point_to_vertex[ mapPoint.get() ] = point_vertex;
       }
 
-      g2o_driver_.AddEdge(measurements_.size(), point_vertex, camera_vertex, *meas);
+      minimizer_.AddEdge(measurements_.size(), point_vertex, camera_vertex, *meas);
       measurements_.push_back( meas );
     }
   }
@@ -114,8 +109,7 @@ void BundleDriver::SetData(ConstIterable<sptam::Map::SharedKeyFrame>& adjustView
   // Add the fixed keyframes' poses to the bundle adjuster.
   for ( const sptam::Map::SharedKeyFrame& keyFrame : fixedViews )
   {
-    G2ODriver::Vertex* camera_vertex = g2o_driver_.AddVertex( keyFrame->GetCameraPose(), keyFrame->getRectifiedCameraParameters(), true, new CameraVertexData( keyFrame ) );
-    view_to_vertex[ keyFrame.get() ] = camera_vertex;
+    G2ODriver::Vertex* camera_vertex = minimizer_.AddVertex( keyFrame->GetCameraPose(), keyFrame->getRectifiedCameraParameters(), true, new CameraVertexData( keyFrame ) );
 
     for ( sptam::Map::SharedMeas& meas : keyFrame->measurements() )
     {
@@ -126,7 +120,7 @@ void BundleDriver::SetData(ConstIterable<sptam::Map::SharedKeyFrame>& adjustView
       {
         G2ODriver::Vertex* point_vertex = point_to_vertex.at( mapPoint.get() );
 
-        g2o_driver_.AddEdge(measurements_.size(), point_vertex, camera_vertex, *meas);
+        minimizer_.AddEdge(measurements_.size(), point_vertex, camera_vertex, *meas);
         measurements_.push_back( meas );
       }
       catch (const std::out_of_range& err)
@@ -160,29 +154,14 @@ std::list< sptam::Map::SharedMeas > BundleDriver::GetBadMeasurements()
 
   std::list< sptam::Map::SharedMeas > badMeasurements;
 
-  for ( auto& edge_ptr : g2o_driver_.activeEdges() )
+  for ( auto& edge_ptr : minimizer_.activeEdges() )
     if ( huber_thresold < edge_ptr->chi2() )
       badMeasurements.push_back( measurements_[ edge_ptr->id() ] );
 
   return badMeasurements;
 }
 
-void BundleDriver::Clear()
-{
-  // freeing the graph memory
-  g2o_driver_.Clear();
-
-  point_vertices_.clear();
-  camera_vertices_.clear();
-  measurements_.clear();
-}
-
-void BundleDriver::Break()
-{
-  g2o_driver_.Break();
-}
-
 bool BundleDriver::Adjust(int maxIterations)
 {
-  return g2o_driver_.Adjust( maxIterations );
+  return minimizer_.Adjust( maxIterations );
 }

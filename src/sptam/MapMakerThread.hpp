@@ -40,7 +40,6 @@
 #include <bitset>
 #include <atomic>
 
-
 /**
  * @brief TODO
  */
@@ -97,6 +96,10 @@ class MapMakerThread : public MapMaker
     // Queue of new keyFrames waiting to be processed by maintainance.
     concurrent_queue<sptam::Map::SharedKeyFrame> keyFrameQueue_;
 
+    // list of keyframes to be adjusted by the LBA and used to refind measurements from new created points.
+    // Gaston: LoopClosure safe usage windows uses this member variable for sincronization
+    std::set< sptam::Map::SharedKeyFrame > adjustable_keyframes_cache_, fixed_keyframes_cache_;
+
     /* Gaston: This mutex handles the usage and establishment of the safe usage windows between LocalMapping and LoopClosing
      * both writing and reading is managed with this unique mutex.
      * NOTE: To ensure that the safe window takes place at beginning of all Mapping procedures, it must be establish while Mapping is
@@ -107,10 +110,8 @@ class MapMakerThread : public MapMaker
 
     std::atomic_bool processing_;
 
-//    sptam::Map::SharedKeyFrameSet getSafeCovisibleKFs(sptam::Map::SharedKeyFrameSet& baseKFs) override;
-
-    bool isSafe(sptam::Map::SharedKeyFrame keyframe) override;
-
+    // Check if the local window used by the LBA is locked
+    bool isSafe(const sptam::Map::SharedKeyFrame& keyframe);
 
   /*** Private functions ***/
 

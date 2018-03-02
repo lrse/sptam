@@ -32,13 +32,12 @@
  */
 #pragma once
 
-#include <Eigen/StdVector>
 #include "Map.hpp"
 #include "Match.hpp"
-#include "BundleDriver.hpp"
 #include "RowMatcher.hpp"
 #include "sptamParameters.hpp"
-#include "utils/fixed_queue.hpp"
+#include "CovisibilityWindow.hpp"
+#include "utils/eigen_alignment.hpp"
 
 #ifdef USE_LOOPCLOSURE
 #include "loopclosing/LoopClosing.hpp"
@@ -69,29 +68,17 @@ class MapMaker
      */
     virtual sptam::Map::SharedKeyFrame AddKeyFrame(const StereoFrame& frame, /*const */std::list<Match>& measurements);
 
-    void addStereoPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame, const std::vector<MapPoint,Eigen::aligned_allocator<MapPoint>>& points, const std::vector<Measurement>& measurements);
+    void addStereoPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame, const std::aligned_vector<MapPoint>& points, const std::vector<Measurement>& measurements);
 
     #ifdef USE_LOOPCLOSURE
     void setLoopClosing(std::shared_ptr<LoopClosing>& lc)
     {loopclosing_ = lc;}
     #endif
 
-    size_t getKFsToAdjustByLocal()
-    {return params_.nKeyFramesToAdjustByLocal;}
-
-
     /**
      * Dummy function in sequential mode
      */
-    virtual void Stop(){;}
-
-  // Get Triangulated MapPoints from a given KeyFrame
-  std::list<sptam::Map::SharedPoint> getPointsCreatedBy(const sptam::Map::SharedKeyFrame& keyFrame);
-
-  // When new map points are generated, they're only created from a stereo pair
-  // this tries to make additional measurements in other KFs which they might
-  // be in. It returns the number of newly found measurements.
-  size_t ReFind(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames, Iterable<sptam::Map::SharedPoint>&& new_points);
+    virtual void Stop() {}
 
   // Some functions are protected so they are reachable
   // by the threaded version of the MapMaker.
@@ -106,20 +93,10 @@ class MapMaker
 
     RowMatcher rowMatcher_;
 
-    typedef fixed_queue< sptam::Map::SharedKeyFrame > KeyFrameCache;
-
-    // list of keyframes to be adjusted by the LBA and used to refind measurements from new created points.
-    std::list< sptam::Map::SharedKeyFrame > LBA_keyframes_window_; // Gaston: LoopClosure safe usage windows uses this member variable for sincronization
-
-  // Maintenance functions:
-
-    // Interrupt Glogal Bundle Adjustment
-    void InterruptBA();
-
-    void FillLBAKeyframesWindow(sptam::Map::SharedKeyFrame keyframe);
+  // helper functions:
 
     // Peform a local bundle adjustment which only adjusts a selection of keyframes.
-    bool BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames);
+    bool BundleAdjust(const std::list< sptam::Map::SharedKeyFrame >& new_keyframes, sptam::Map::SharedKeyFrameSet& adjustable_keyframes, sptam::Map::SharedKeyFrameSet& fixed_keyframes, std::function<bool(const sptam::Map::SharedKeyFrame&)> isSafe);
 
     void createNewPoints(sptam::Map::SharedKeyFrame& keyFrame);
 
@@ -131,31 +108,28 @@ class MapMaker
      */
     virtual bool isUnmatched(const sptam::Map::KeyFrame& keyFrame, const sptam::Map::SharedPoint& mapPoint);
 
-    virtual void CleanupMap(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames);
-
-    virtual void RemoveMeasurements(Iterable<sptam::Map::SharedMeas>&& measurements);
-
-    void RemoveBadKeyFrames(const ConstIterable<sptam::Map::SharedKeyFrame>& keyFrames);
-
-  // helper functions
   private:
-
-    std::list< sptam::Map::SharedPoint > filterUnmatched(const sptam::Map::KeyFrame& keyFrame, Iterable<sptam::Map::SharedPoint>& mapPoints);
-
-  private:
-
-  /*** Private properties ***/
-
-    BundleDriver bundleDriver_;
-
-    virtual sptam::Map::SharedKeyFrameSet getSafeCovisibleKFs(sptam::Map::SharedKeyFrameSet& baseKFs);
-
-    virtual bool isSafe(sptam::Map::SharedKeyFrame keyframe);
-
-
-  protected:
-
-  /*** Algorithm thresholds and parameters ***/
 
     Parameters params_;
+
+    CovisibilityWindow keyframe_window_;
+
+  // helper functions
+
+    std::list< sptam::Map::SharedPoint > filterUnmatched(const sptam::Map::KeyFrame& keyFrame, ConstIterable<sptam::Map::SharedPoint>& mapPoints);
+
+    // Get Triangulated MapPoints from a given KeyFrame
+    std::list<sptam::Map::SharedPoint> getPointsCreatedBy(const sptam::Map::SharedKeyFrame& keyFrame);
+    std::list<sptam::Map::SharedPoint> getPointsCreatedBy(const std::list<sptam::Map::SharedKeyFrame>& keyframes);
+
+    // When new map points are generated, they're only created from a stereo pair
+    // this tries to make additional measurements in other KFs which they might
+    // be in. It returns the number of newly found measurements.
+    size_t ReFind(ConstIterable<sptam::Map::SharedKeyFrame>&& keyFrames, ConstIterable<sptam::Map::SharedPoint>&& new_points);
+
+    void CleanupMap(ConstIterable<sptam::Map::SharedKeyFrame>&& keyFrames);
+
+    void RemoveMeasurements(Iterable<sptam::Map::SharedMeas>&& measurements);
+
+    void RemoveBadKeyFrames(const ConstIterable<sptam::Map::SharedKeyFrame>& keyFrames);
 };

@@ -43,7 +43,7 @@
 class MotionModel : public PosePredictor
 {
   public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     MotionModel(const ros::Time& time, const Eigen::Vector3d& initialPosition, const Eigen::Quaterniond& initialOrientation, const Eigen::Matrix6d& initialCovariance);
 
     // Get the current camera pose.
@@ -74,4 +74,8 @@ class MotionModel : public PosePredictor
 
     double angular_velocity_angle_;
     Eigen::Vector3d angular_velocity_axis_;
+
+  public:
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };

@@ -34,6 +34,7 @@
 #pragma once
 
 #include "../sptam/utils/projective_math.hpp"
+#include "../sptam/utils/cv2eigen.hpp"
 #include "../sptam/CameraParameters.hpp"
 
 #ifdef SHOW_PROFILING
@@ -68,7 +69,7 @@ CameraParameters loadCameraCalibration(const std::string& filename, double frust
   double baseline;
   config["baseline"] >> baseline;
 
-  return CameraParameters(intrinsic, image_width, image_height, frustum_near_plane_distance, frustum_far_plane_distance, baseline);
+  return CameraParameters(cv2eigen<double, 3, 3>(intrinsic), image_width, image_height, frustum_near_plane_distance, frustum_far_plane_distance, baseline);
 }
 
 void setParameters( cv::Ptr<cv::Algorithm>&& algorithm, const YAML::Node& node )

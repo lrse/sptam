@@ -35,7 +35,13 @@
 
 #include <vector>
 #include <iostream>
-#include <ros/ros.h> // ros::Time
+
+// ros::Time
+#ifdef BUILDING_ROS
+#include <ros/ros.h>
+#else
+#include "../sptam/utils/time/time.h"
+#endif
 
 class Timestamps
 {

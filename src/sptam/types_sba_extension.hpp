@@ -43,7 +43,7 @@ using namespace Eigen;
 class G2O_TYPES_SBA_API EdgeProjectP2MCRight : public  BaseBinaryEdge<2, Vector2d, VertexSBAPointXYZ, VertexCam>
 {
   public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     EdgeProjectP2MCRight();
     virtual bool read(std::istream& is);
     virtual bool write(std::ostream& os) const;
@@ -88,6 +88,10 @@ class G2O_TYPES_SBA_API EdgeProjectP2MCRight : public  BaseBinaryEdge<2, Vector2
 
     // jacobian
     virtual void linearizeOplus();
+
+  public:
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
 } // g2o

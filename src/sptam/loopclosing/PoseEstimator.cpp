@@ -95,7 +95,7 @@ size_t PoseEstimator::centralPoseEstimation(const sptam::Map::SharedKeyFrame& re
 
   bearingVectors_t bearingVectors3;
 
-  Matx33d left_calibration = targetFrame->GetFrameLeft().GetCamera().GetIntrinsics();
+  Eigen::Matrix3d left_calibration = targetFrame->GetFrameLeft().GetCamera().GetIntrinsics();
   double ppal_point_x = left_calibration(0,2);
   double ppal_point_y = left_calibration(1,2);
   double focal_length = left_calibration(0,0);
@@ -183,12 +183,12 @@ points_t PoseEstimator::triangulateReferencePoints(const sptam::Map::SharedKeyFr
                                                    const std::vector<cv::KeyPoint>& kps2,
                                                    const std::vector<SDMatch>& stereo_matches)
 {
-  Matx33d left_calibration = referenceFrame->GetFrameLeft().GetCamera().GetIntrinsics();
+  Eigen::Matrix3d left_calibration = referenceFrame->GetFrameLeft().GetCamera().GetIntrinsics();
   double left_ppal_point_x = left_calibration(0,2);
   double left_ppal_point_y = left_calibration(1,2);
   double left_focal_length = left_calibration(0,0);
 
-  Matx33d right_calibration = referenceFrame->GetFrameRight().GetCamera().GetIntrinsics();
+  Eigen::Matrix3d right_calibration = referenceFrame->GetFrameRight().GetCamera().GetIntrinsics();
   double right_ppal_point_x = right_calibration(0,2);
   double right_ppal_point_y = right_calibration(1,2);
   double right_focal_length = right_calibration(0,0);

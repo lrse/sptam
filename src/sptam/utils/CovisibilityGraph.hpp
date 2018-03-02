@@ -34,6 +34,7 @@
 
 #include <list>
 #include "Iterable.hpp"
+#include "eigen_alignment.hpp"
 
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/locks.hpp>
@@ -366,29 +367,14 @@ class CovisibilityGraph
     std::list<SharedKeyFrame> keyframes_;
     std::list<SharedMapPoint> mappoints_;
 
-    struct compareSharedMapPoints {
-       bool operator() (const typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedMapPoint& p1, const typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedMapPoint& p2) const
-      { return p1.get() < p2.get(); }
-    };
-
-    struct compareSharedKeyFrames {
-       bool operator() (const typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedKeyFrame& k1, const typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedKeyFrame& k2) const
-      { return k1.get() < k2.get(); }
-    };
-
-    struct compareSharedMeasurements {
-       bool operator() (const typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedMeasurement& m1, const typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedMeasurement& m2) const
-      { return m1.get() < m2.get(); }
-    };
-
   public:
 
     // This needs to be public because we need to use the same
     // comparison function in multiple places to search for duplicates
     // in a set :(
-    typedef std::set<SharedMapPoint, compareSharedMapPoints> SharedMapPointSet;
-    typedef std::set<SharedKeyFrame, compareSharedKeyFrames> SharedKeyFrameSet;
-    typedef std::set<SharedMeasurement, compareSharedMeasurements> SharedMeasurementSet;
+    typedef std::set<SharedMapPoint> SharedMapPointSet;
+    typedef std::set<SharedKeyFrame> SharedKeyFrameSet;
+    typedef std::set<SharedMeasurement> SharedMeasurementSet;
 
     typedef std::list<SharedKeyFrame> SharedKeyFrameList;
     typedef std::list<SharedMapPoint> SharedMapPointList;
@@ -399,11 +385,8 @@ class CovisibilityGraph
     SharedMapPoint addMapPoint( const MAP_POINT_T& mapPoint );
     void removeMapPoint( const SharedMapPoint& mapPoint );
 
-    void addMeasurement( SharedKeyFrame& keyFrame, SharedMapPoint& mapPoint, const MEAS_T& edge );
+    void addMeasurement(const SharedKeyFrame& keyFrame, const SharedMapPoint& mapPoint, const MEAS_T& edge);
     void removeMeasurement( const SharedMeasurement& edge );
-
-    static inline ConstIterable<SharedKeyFrame> createIterable( SharedKeyFrameSet& set )
-    { return ConstSetIterable<SharedKeyFrame, compareSharedKeyFrames>::from( set ); }
 
     SharedMapPointSet getLocalMap(/*const */KeyFrame& keyFrame);
 
@@ -433,7 +416,7 @@ class CovisibilityGraph
           return  measurements_;
         }
 
-        std::map< SharedKeyFrame, size_t, compareSharedKeyFrames> covisibilityKeyFrames()
+        std::map<SharedKeyFrame, size_t> covisibilityKeyFrames()
         {
           boost::shared_lock<boost::shared_mutex> lock( covisibilityKeyframes_mutex_ );
           return covisibilityKeyFrames_;
@@ -459,8 +442,7 @@ class CovisibilityGraph
               covisibilityKeyFrames_.insert(std::pair<CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedKeyFrame,size_t>(covisibilityKeyFrame, 1));
         }
 
-
-        void addMeasurement(SharedMeasurement& meas) {
+        void addMeasurement(const SharedMeasurement& meas) {
           boost::unique_lock<boost::shared_mutex> lock( meas_mutex_ );
           meas->it_keyFrame_ = INSERT_BACK(measurements_, meas);
         }
@@ -471,7 +453,7 @@ class CovisibilityGraph
 
         mutable std::list< SharedMeasurement > measurements_;
 
-        mutable std::map< SharedKeyFrame, size_t, compareSharedKeyFrames> covisibilityKeyFrames_;
+        mutable std::map<SharedKeyFrame, size_t> covisibilityKeyFrames_;
 
         void setIteratorToContainer(const typename std::list<SharedKeyFrame>::iterator& it){ to_container_ = it; }
 
@@ -497,7 +479,7 @@ class CovisibilityGraph
 
       private:
 
-        void addMeasurement(SharedMeasurement& meas) {
+        void addMeasurement(const SharedMeasurement& meas) {
           boost::unique_lock<boost::shared_mutex> lock( meas_mutex_ );
           meas->it_mapPoint_ = INSERT_BACK(measurements_, meas);
         }
@@ -517,20 +499,14 @@ class CovisibilityGraph
     {
       public:
 
-        Measurement(const MEAS_T& edge, SharedKeyFrame& keyFrame, SharedMapPoint& mapPoint)
+        Measurement(const MEAS_T& edge, const SharedKeyFrame& keyFrame, const SharedMapPoint& mapPoint)
           : MEAS_T( edge ), keyFrame_( keyFrame ), mapPoint_( mapPoint ) {}
 
         Measurement( const Measurement& other ) = delete; // non construction-copyable
         Measurement& operator=( const Measurement& ) = delete; // non copyable
 
-        inline SharedKeyFrame& keyFrame()
-        { return keyFrame_; }
-
         inline const SharedKeyFrame& keyFrame() const
         { return keyFrame_; }
-
-        inline SharedMapPoint& mapPoint()
-        { return mapPoint_; }
 
         inline const SharedMapPoint& mapPoint() const
         { return mapPoint_; }

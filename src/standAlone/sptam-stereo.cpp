@@ -69,6 +69,10 @@
   #include <X11/Xlib.h> // XInitThreads()
 #endif // SHOW_TRACKED_FRAMES
 
+#ifdef SHOW_POINT_CLOUD
+  #include "gui/PointCloud.hpp"
+#endif // SHOW_POINT_CLOUD
+
 #ifdef SHOW_PROFILING
   #include "../sptam/utils/log/Profiler.hpp"
   #include "../sptam/utils/log/ScopedProfiler.hpp"
@@ -294,6 +298,13 @@ int main(int argc, char* argv[])
   sptamWrapper.setLoopClosing(loop_detector);
   #endif
 
+  #ifdef SHOW_POINT_CLOUD
+    const sptam::Map &map = sptamWrapper.GetMap();
+    PointCloud pointCloud(getCurrentCameraPose( motionModel ), map,
+                          cameraParametersLeft.horizontalFov(), cameraParametersLeft.verticalFov(),
+                          frustum_near_plane_distance_, frustum_far_plane_distance_);
+  #endif
+
   // TODO hardcoded rate in case of no timestamp. Parametrize.
   Timestamps timestamps = useTimestamps ? Timestamps(timestampsFile, imageBeginIndex) : Timestamps(0.1, imageBeginIndex);
 
@@ -346,19 +357,34 @@ int main(int argc, char* argv[])
     }
     #endif
 
+    #ifdef SHOW_POINT_CLOUD
+
+      pointCloud.SetCameraPose( getCurrentCameraPose( motionModel ) );
+
+    #endif // SHOW_POINT_CLOUD
+
     // Get Next Frames
     hasNextFrame = frameGeneratorLeft->getNextFrame( imageLeft ) and frameGeneratorRight->getNextFrame( imageRight );
     frame_number++;
   }
+
+  #ifdef SHOW_POINT_CLOUD
+    // Create PLY file to be read by meshlab software
+    CreatePLYFile( map );
+  #endif // SHOW_POINT_CLOUD
 
   std::cout << "Wait for stop..." << std::endl;
 
   // Wait the mapper quits the main loop and joins.
   sptamWrapper.Stop();
 
+  #ifdef SHOW_POINT_CLOUD
+    // Stop visualizer Thread
+    pointCloud.Stop();
+  #endif
 
-  /*#ifdef SHOW_PROFILING
-
+  #ifdef SHOW_PROFILING
+/*
     for ( const auto& mapPoint : sptamWrapper.GetMapPoints() ) {
       WriteToLog( " tk MeasurementCount: ", mapPoint.measurements().size() );
     }
@@ -367,16 +393,28 @@ int main(int argc, char* argv[])
       CameraPose keyFramePose = keyFrame.GetCameraPose();
       writePoseToLog("FINAL_FRAME_POSE", keyFrame.GetId(), keyFramePose.GetPosition(), keyFramePose.GetOrientationMatrix(), keyFramePose.covariance());
     }
+*/
+/*
+    // dump poses file
+    {
+      std::ofstream out( "sptam_poses.dat" );
+      for ( const auto& keyframe : sptamWrapper.GetMap().getKeyframes() ) {
+        CameraPose keyframePose = keyframe->GetCameraPose();
+        __poseToStream__(out, keyframePose.GetPosition(), keyframePose.GetOrientationMatrix(), keyframePose.covariance()) << std::endl;
+      }
+      out.close();
+    }
 
     // dump map file
-    std::stringstream ss;
-    ss.str(""); ss << Logger::FileName() << "_map_cloud.dat";
-    std::ofstream out(ss.str());
-    for ( const auto& mapPoint : sptamWrapper.GetMapPoints() ) {
-      out << mapPoint.GetPosition().x() << " " << mapPoint.GetPosition().y() <<  " " << mapPoint.GetPosition().z() << std::endl;
-    out.close();
-
-  #endif*/
+    {
+      std::ofstream out( "sptam_points.dat" );
+      for ( const auto& mapPoint : sptamWrapper.GetMap().getMapPoints() ) {
+        __pointToStream__(out, mapPoint->GetPosition(), mapPoint->covariance()) << std::endl;
+      }
+      out.close();
+    }
+*/
+  #endif
 
   std::cout << "Stop succesfull!" << std::endl;
 

@@ -49,7 +49,7 @@
 class SPTAM
 {
   public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     SPTAM(const RowMatcher& rowMatcher, const Parameters& params);
 
     void init(/*const*/ StereoFrame& frame);
@@ -169,4 +169,9 @@ class SPTAM
   private:
 
     bool initialized_;
+
+  public:
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 };

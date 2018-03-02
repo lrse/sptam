@@ -32,9 +32,9 @@
  */
 #pragma once
 
-#include "MEAS.hpp"
-#include "utils/Hash2D.hpp"
+#include <math.h>
 #include <opencv2/opencv.hpp>
+#include "utils/Hash2D.hpp"
 
 class ImageFeatures
 {

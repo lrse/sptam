@@ -34,8 +34,8 @@
 #pragma once
 
 #include "../sptam/utils/projective_math.hpp"
+#include "../sptam/utils/cv2eigen.hpp"
 #include "../sptam/CameraParameters.hpp"
-
 
 #ifdef SHOW_PROFILING
   #include "../sptam/utils/log/Logger.hpp"
@@ -62,7 +62,7 @@ CameraParameters loadCameraCalibration(const std::string& filename, double frust
   cv::Mat_<double> intrinsic;
   config["camera_matrix"] >> intrinsic;
 
-  return CameraParameters(intrinsic, (int) config["image_width"], (int) config["image_height"], frustum_near_plane_distance, frustum_far_plane_distance, (double) config["baseline"]);
+  return CameraParameters(cv2eigen<double, 3, 3>(intrinsic), (int) config["image_width"], (int) config["image_height"], frustum_near_plane_distance, frustum_far_plane_distance, (double) config["baseline"]);
 }
 
 template<typename T>

@@ -34,6 +34,7 @@
 #include <algorithm>
 #include "MapMakerThread.hpp"
 #include "utils/macros.hpp"
+#include "utils/set_union.hpp"
 
 #ifdef SHOW_PROFILING
 #include "../sptam/utils/log/Profiler.hpp"
@@ -173,14 +174,9 @@ void MapMakerThread::Maintenance()
 
 void MapMakerThread::attendLockUsageWindow()
 {
-  /* This is a safe portion of code where to define safe window*/
-  std::lock_guard<std::mutex> lock(usagewindow_mutex_);
+  std::lock_guard<std::mutex> lock( usagewindow_mutex_ );
 
-  for (sptam::Map::SharedKeyFrame& keyFrame : LBA_keyframes_window_){
-    locked_window_.insert( keyFrame );
-    for( auto it : keyFrame->covisibilityKeyFrames() )
-      locked_window_.insert( it.first );
-  }
+  locked_window_ = setUnion(adjustable_keyframes_cache_, fixed_keyframes_cache_);
 
   isUsageWindowLocked_ = true;
 }
@@ -188,102 +184,31 @@ void MapMakerThread::attendLockUsageWindow()
 void MapMakerThread::attendNewKeyframes()
 {
   // Select at most 5 new unprocessed keyFrames to refine.
-  std::list< sptam::Map::SharedKeyFrame > keyFrames;
+  std::list< sptam::Map::SharedKeyFrame > new_keyframes;
   {
     sptam::Map::SharedKeyFrame keyFrame;
     bool moreData = keyFrameQueue_.waitAndPop( keyFrame );
-    keyFrames.push_back( keyFrame );
+    new_keyframes.push_back( keyFrame );
 
-    while ( (keyFrames.size() < 5) and moreData )
+    while ( (new_keyframes.size() < 5) and moreData )
     {
       moreData = keyFrameQueue_.waitAndPop( keyFrame );
-      keyFrames.push_back( keyFrame );
+      new_keyframes.push_back( keyFrame );
     }
   }
 
-  #ifdef SHOW_PROFILING
-    sptam::ScopedProfiler timer(" ba totalba: ");
-  #endif
-
-  // Get New MapPoints triangulated by the keyFrames
-  std::list<sptam::Map::SharedPoint> new_points;
-
-  // Fill in new_points and update LBA_keyframes_window_.
-  LBA_keyframes_window_.clear(); // clear previous Local BA processed keyframes
-  for ( auto keyFrame : keyFrames )
-  {
-    std::list<sptam::Map::SharedPoint> newKeyFramePoints = getPointsCreatedBy( keyFrame );
-
-    new_points.insert(new_points.end(), newKeyFramePoints.begin(), newKeyFramePoints.end());
-
-    // update cache buffer
-    LBA_keyframes_window_.push_back( keyFrame );
-  }
-
-  // most recent keyframe extracted from the queue
-  sptam::Map::SharedKeyFrame recentKeyframe = keyFrames.back();
-
-  FillLBAKeyframesWindow( recentKeyframe );
-
-  /*#ifdef SHOW_PROFILING
-    //std::cout << "Se agrega/n " << keyframes.size() << " KeyFrame al mapa." << std::endl;
-
-    WriteToLog(" ba totalKeyFrames: ", map_.nKeyFrames());
-    WriteToLog(" ba totalPoints: ", map_.nMapPoints());
-  #endif*/
-
-  // general maintenance
-
-  // Refine Newly made points (the ones added from stereo matches
-  // when the last keyframe came in)
-
-  #ifdef SHOW_PROFILING
-  {
-    sptam::ScopedProfiler timer(" ba refind_newly_made: ");
-  #endif
-
-  /*int nFound = */ReFind( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ), ListIterable<sptam::Map::SharedPoint>::from( new_points ) );
-
-  #ifdef SHOW_PROFILING
-  }
-  #endif
-
-  #ifdef SHOW_PROFILING
-    sptam::Timer t_local;
-    t_local.start();
-  #endif
-
-  // No lock is required: LBA_keyframes_window_ is an internal variable and it is not modified by other thread
+  // No lock is required: adjustable_keyframes_cache_ is an internal variable and it is not modified by other thread
   // No lock is required: The keyframes have an internal lock for their modification
-  bool completed = BundleAdjust( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ) );
-
-  #ifdef SHOW_PROFILING
-    t_local.stop();
-    WriteToLog(" ba local: ", t_local);
-  #endif
-
-  #ifdef USE_LOOPCLOSURE
-  /* Notifying newly added keyframe to Loop Closure service */
-  if(loopclosing_ != nullptr)
-    loopclosing_->addKeyFrames(keyFrames);
-  #endif
-
-  // If Mapper thread was intrrupted, don't do any cleanup.
-  if ( not completed )
-    return;
-
-  // Remove bad points marked by BA
-  CleanupMap( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ) );
+  BundleAdjust(new_keyframes, adjustable_keyframes_cache_, fixed_keyframes_cache_, std::bind(&MapMakerThread::isSafe, this, std::placeholders::_1));
 }
 
-// Check if the local window used by the LBA is locked
-bool MapMakerThread::isSafe(sptam::Map::SharedKeyFrame keyframe) {
+bool MapMakerThread::isSafe(const sptam::Map::SharedKeyFrame& keyframe)
+{
   if( isUsageWindowLocked() )
-    return (locked_window_.count( keyframe ) == 1);
+    return locked_window_.count( keyframe );
   else
     return true;
 }
-
 
 void MapMakerThread::waitUntilEmptyQueue()
 { keyFrameQueue_.waitEmpty(); }
@@ -298,7 +223,7 @@ const sptam::Map::SharedKeyFrameSet& MapMakerThread::lockUsageWindow()
     std::lock_guard<std::mutex> lock(usagewindow_mutex_);
 
     isUsageWindowLocked_ = false;
-    locked_window_.clear();
+    locked_window_.clear(); // TODO creo que esto puede volar
 
     requests_[LOCKWINDOW_REQUEST] = true;
     requests_cv_.notify_all();
@@ -315,7 +240,7 @@ void MapMakerThread::freeUsageWindow()
   std::lock_guard<std::mutex> lock(usagewindow_mutex_);
 
   isUsageWindowLocked_ = false;
-  locked_window_.clear();
+  locked_window_.clear(); // TODO creo que esto puede volar
 }
 
 bool MapMakerThread::isUsageWindowLocked()

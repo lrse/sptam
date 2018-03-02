@@ -573,7 +573,7 @@ class SetIterator : public IteratorBase<E>
 		typename std::set<E, CMP>::iterator it_;
 };*/
 
-template<typename E, typename CMP>
+template<typename E, typename CMP = std::less<E> >
 class ConstSetIterator : public ConstIteratorBase<E>
 {
 	public:
@@ -652,7 +652,7 @@ class SetIterable : public IterableBase<E>
     std::set<E, CMP>& container_;
 };*/
 
-template<typename E, typename CMP>
+template<typename E, typename CMP = std::less<E> >
 class ConstSetIterable : public ConstIterableBase<E>
 {
   public:

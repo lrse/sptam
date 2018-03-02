@@ -6,8 +6,24 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake-mod
 # include macros for program options
 include( options )
 
+# include finds for common program dependencies
+include( dependencies )
+
+# Build the sptam library
+add_subdirectory( src/sptam )
+
+# build unit tests
+enable_testing()
+add_subdirectory( src/tests )
+
+# When building with ROS
+if( CATKIN_DEVEL_PREFIX )
+
+set(BUILDING_ROS ON)
+add_definitions(-DBUILDING_ROS)
+
 ## Find catkin macros and libraries
-find_package( catkin REQUIRED COMPONENTS
+find_package(catkin REQUIRED COMPONENTS
   roscpp
   cmake_modules
   std_msgs
@@ -26,30 +42,6 @@ find_package( catkin REQUIRED COMPONENTS
 )
 include_directories(${catkin_INCLUDE_DIRS})
 
-# Find Boost Library
-find_package(Boost COMPONENTS thread system regex REQUIRED)
-include_directories(${BOOST_INCLUDE_DIR})
-
-# Find yaml-cpp Library
-find_package(PkgConfig)
-pkg_check_modules(YamlCpp yaml-cpp)
-
-# Find OpenCV library
-FIND_PACKAGE(OpenCV REQUIRED) # OpenCV 3
-#FIND_PACKAGE(OpenCV 2 REQUIRED) # OpenCV 2
-include_directories(${OpenCV_INCLUDE_DIRS})
-
-# Find Suitesparse library
-find_package(SuiteSparse REQUIRED)
-include_directories(${CSPARSE_INCLUDE_DIR})
-include_directories(${CHOLMOD_INCLUDE_DIR})
-
-# Find G2O Library
-find_package(G2O REQUIRED)
-# select required components
-SET(G2O_LIBRARIES ${G2O_CORE_LIBRARY} ${G2O_STUFF_LIBRARY} ${G2O_SOLVER_CSPARSE} ${G2O_SOLVER_CSPARSE_EXTENSION} ${G2O_TYPES_SBA} ${G2O_TYPES_SLAM3D})
-include_directories(${G2O_INCLUDE_DIR})
-
 ###################################
 ## catkin specific configuration ##
 ###################################
@@ -60,44 +52,20 @@ include_directories(${G2O_INCLUDE_DIR})
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES sptam
-   CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs cv_bridge message_filters image_geometry pcl_ros nav_msgs tf2 tf2_geometry_msgs tf2_ros nodelet
+  CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs cv_bridge message_filters image_geometry pcl_ros nav_msgs tf2 tf2_geometry_msgs tf2_ros nodelet
 #  DEPENDS system_lib
 )
-
 
 ###########
 ## Build ##
 ###########
 
-# Build the sptam library
-add_subdirectory( src/sptam )
-
-set( SPTAM_LIBRARIES
-  ${OpenCV_LIBRARIES}
-  ${Boost_LIBRARIES}
-  ${PCL_LIBRARIES}
-  ${catkin_LIBRARIES}
-  ${G2O_LIBRARIES}
-  ${SUITESPARSE_LIBRARIES}
-  ${CHOLMOD_LIBRARIES}
-  ${YamlCpp_LIBRARIES}
-  cxsparse
-  sptam
-)
-
 # Build the sptam node
 add_subdirectory( src/ros )
 
-#############
-## Install ##
-#############
+# When building standalone
+else() # CATKIN_DEVEL_PREFIX
 
-#TODO
+add_subdirectory( src/standAlone )
 
-#############
-## Testing ##
-#############
-
-#TODO
+endif() # CATKIN_DEVEL_PREFIX

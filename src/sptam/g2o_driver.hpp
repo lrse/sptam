@@ -57,15 +57,6 @@ class G2ODriver
      */
     bool Adjust(int maxIterations);
 
-    void Clear();
-
-    /**
-     * Interrupt the bundle adjustment if there is one in progress.
-     * This function is (probably) called from another thread in which
-     * the Adjust(...) function is running.
-     */
-    void Break();
-
     // Driver SPTAM -> G2O
 
     /**

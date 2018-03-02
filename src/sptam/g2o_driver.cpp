@@ -102,20 +102,6 @@ bool G2ODriver::Adjust(int maxIterations)
   return not aborted; // aborted = false, occurs when the method converge or when it hits the max iteration number
 }
 
-void G2ODriver::Break()
-{
-  optimizer_abort_request_ = true;
-  optimizer_abort_request_copy_ = optimizer_abort_request_;
-}
-
-void G2ODriver::Clear()
-{
-  next_vertex_id_ = 0;
-
-  // freeing the graph memory
-  optimizer_.clear();
-}
-
 G2ODriver::Vertex* G2ODriver::AddVertex(
   const CameraPose& cameraPose, const sptam::RectifiedCameraParameters& rectified_camera_parameters,
   const bool isFixed, VertexData* userData

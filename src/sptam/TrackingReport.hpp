@@ -42,7 +42,7 @@
 class TrackingReport
 {
   public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     TrackingReport()
       : T_corr(Eigen::Matrix4d::Identity()), state( State::OK )
     {}

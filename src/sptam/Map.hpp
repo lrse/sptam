@@ -83,7 +83,7 @@ class Map
     void RemoveMapPoint(const SharedPoint& mapPoint)
     { graph_.removeMapPoint( mapPoint ); }
 
-    void addMeasurement(SharedKeyFrame& keyFrame, SharedPoint& mapPoint, const Measurement& measurement)
+    void addMeasurement(const SharedKeyFrame& keyFrame, const SharedPoint& mapPoint, const Measurement& measurement)
     { graph_.addMeasurement( keyFrame, mapPoint, measurement ); }
 
     void removeMeasurement(const SharedMeas& measurement)

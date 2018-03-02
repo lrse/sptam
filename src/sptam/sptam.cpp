@@ -35,9 +35,9 @@
 #include "Match.hpp"
 #include "match_to_points.hpp"
 #include "utils/macros.hpp"
-#include "utils/cv2eigen.hpp"
 #include <opencv2/core/eigen.hpp>
 #include "utils/projective_math.hpp"
+#include "utils/eigen_alignment.hpp"
 
 #include "KeyFramePolicy.hpp"
 #include "FeatureExtractorThread.hpp"
@@ -45,7 +45,6 @@
 
 #include <boost/thread/locks.hpp>
 #include <boost/thread/lock_types.hpp>
-#include <Eigen/StdVector>
 
 #ifdef ENABLE_PARALLEL_CODE
 #include <tbb/parallel_for.h>
@@ -78,7 +77,7 @@ SPTAM::SPTAM(const RowMatcher& rowMatcher, const Parameters& params)
 
 void SPTAM::init(/*const*/ StereoFrame& frame)
 {
-  std::vector<MapPoint, Eigen::aligned_allocator<MapPoint> > points;
+  std::aligned_vector<MapPoint> points;
   std::vector<Measurement> measurements;
 
   frame.TriangulatePoints(rowMatcher_, points, measurements);
@@ -150,7 +149,7 @@ TrackingReport SPTAM::track(StereoFrame& frame, sptam::TrackerView& tracker_view
   // Here we will save the measured features in this frame,
   // to be passed to the tracker for pose refinement.
   std::list<Match> measurements = matchToPoints(
-    frame, ListIterable<sptam::Map::SharedPoint>::from( report.localMap ),
+    frame, ConstListIterable<sptam::Map::SharedPoint>::from( report.localMap ),
     params_.descriptorMatcher, params_.matchingNeighborhoodThreshold,
     params_.matchingDistanceThreshold, Measurement::SRC_TRACKER
   );

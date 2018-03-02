@@ -103,23 +103,43 @@ inline void WriteToLog(const std::string tag, const std::list<T>& list)
 
 namespace Eigen { typedef Matrix<double, 6, 6> Matrix6d; }
 
-inline void __poseToStream__(std::ostream& os, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation, const Eigen::Matrix6d& covariance)
+template<size_t ROWS, size_t COLS>
+inline std::ostream& __matToStream__(std::ostream& os, const Eigen::Matrix<double, ROWS, COLS>& matrix)
+{
+  forn(i, ROWS) forn(j, COLS)
+    os << printFullPrecision( matrix(i,j) ) << " ";
+  return os;
+}
+
+template<size_t DIM>
+inline std::ostream& __vecToStream__(std::ostream& os, const Eigen::Matrix<double, DIM, 1>& vec)
+{
+  __matToStream__<DIM, 1>(os, vec);
+  return os;
+}
+
+inline std::ostream& __pointToStream__(std::ostream& os, const Eigen::Vector3d& position, const Eigen::Matrix3d& covariance)
+{
+  __vecToStream__<3>(os, position);
+  __matToStream__<3, 3>(os, covariance);
+  return os;
+}
+
+inline std::ostream& __poseToStream__(std::ostream& os, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation, const Eigen::Matrix6d& covariance)
 {
   os
     << printFullPrecision( orientation(0,0) ) << " " << printFullPrecision( orientation(0,1) ) << " " << printFullPrecision( orientation(0,2) ) << " " << printFullPrecision( position.x() ) << " "
     << printFullPrecision( orientation(1,0) ) << " " << printFullPrecision( orientation(1,1) ) << " " << printFullPrecision( orientation(1,2) ) << " " << printFullPrecision( position.y() ) << " "
     << printFullPrecision( orientation(2,0) ) << " " << printFullPrecision( orientation(2,1) ) << " " << printFullPrecision( orientation(2,2) ) << " " << printFullPrecision( position.z() ) << " ";
 
-  forn(i, 6) forn(j, 6)
-    os << printFullPrecision( covariance(i,j) ) << " ";
+  __matToStream__<6, 6>(os, covariance);
+  return os;
 }
 
-inline void __transfToStream__(std::ostream& os, const Eigen::Matrix4d& transf)
+inline std::ostream& __transfToStream__(std::ostream& os, const Eigen::Matrix4d& transf)
 {
-  os
-    << printFullPrecision( transf(0,0) ) << " " << printFullPrecision( transf(0,1) ) << " " << printFullPrecision( transf(0,2) ) << " " << printFullPrecision( transf(0,3) ) << " "
-    << printFullPrecision( transf(1,0) ) << " " << printFullPrecision( transf(1,1) ) << " " << printFullPrecision( transf(1,2) ) << " " << printFullPrecision( transf(1,3) ) << " "
-    << printFullPrecision( transf(2,0) ) << " " << printFullPrecision( transf(2,1) ) << " " << printFullPrecision( transf(2,2) ) << " " << printFullPrecision( transf(2,3) ) << " ";
+  __matToStream__<3, 4>(os, transf.block<3, 4>(0, 0));
+  return os;
 }
 
 inline void writePoseToLog(const std::string& tag, const size_t currentFrameIndex, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation, const Eigen::Matrix6d& covariance)

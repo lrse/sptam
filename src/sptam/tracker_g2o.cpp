@@ -32,6 +32,7 @@
  */
 
 #include "tracker_g2o.hpp"
+#include "g2o_driver.hpp"
 #include "types_sba_extension.hpp"
 
 #include "utils/macros.hpp"
@@ -64,30 +65,24 @@ CameraPose tracker_g2o::RefineCameraPose(
   if( measurements_num < MIN_MEAS_FOR_TRACKING )
     throw not_enough_points();
 
-  // freeing the graph memory
-  g2o_driver_.Clear();
+  G2ODriver minimizer;
 
-  G2ODriver::Vertex* pose_vertex = g2o_driver_.AddVertex(estimatedCameraPose, rectified_camera_parameters, false);
+  G2ODriver::Vertex* pose_vertex = minimizer.AddVertex(estimatedCameraPose, rectified_camera_parameters, false);
 
   // Add the points' 3D position
 
   for( const auto& match : measurements )
   {
-    G2ODriver::Vertex* point_vertex = g2o_driver_.AddVertex(*match.mapPoint, false, true);
+    G2ODriver::Vertex* point_vertex = minimizer.AddVertex(*match.mapPoint, false, true);
 
     // trivial edge id, since we won't need it for anything
-    g2o_driver_.AddEdge(0, point_vertex, pose_vertex, match.measurement);
+    minimizer.AddEdge(0, point_vertex, pose_vertex, match.measurement);
   }
 
-  if (!g2o_driver_.Adjust( BA_MAX_ITERATIONS ))
+  if (!minimizer.Adjust( BA_MAX_ITERATIONS ))
     std::cout << "WARNING: reached BA_MAX_ITERATIONS in tracker during refine" << std::endl;
 
-  return G2ODriver::GetPose( *pose_vertex, GetPoseCovariance(*pose_vertex) );
-}
+  const g2o::OptimizableGraph::Vertex& pose_graph_vertex = dynamic_cast<const g2o::OptimizableGraph::Vertex&>( *pose_vertex );
 
-Eigen::Matrix6d tracker_g2o::GetPoseCovariance(g2o::HyperGraph::Vertex& pose_vertex)
-{
-  const g2o::OptimizableGraph::Vertex& pose_graph_vertex = dynamic_cast<const g2o::OptimizableGraph::Vertex&>( pose_vertex );
-
-  return g2o_driver_.GetPoseCovariance( pose_graph_vertex );
+  return G2ODriver::GetPose( *pose_vertex, minimizer.GetPoseCovariance( pose_graph_vertex ) );
 }

@@ -33,21 +33,19 @@
 #pragma once
 
 #include "../sptam/StereoFrame.hpp"
-struct StereoImageFeatures {
 
-  typedef std::unique_ptr<StereoImageFeatures> UniquePtr;
-
+struct StereoImageFeatures
+{
   StereoImageFeatures(
     const ImageFeatures& imgFeaturesLeft,
     const ImageFeatures& imgFeaturesRight,
     const cv::Mat& imgLeft,
     const cv::Mat& imgRight)
     : imageFeaturesLeft( imgFeaturesLeft )
-    , imageFeaturesRight( imgFeaturesRight ) {
-
+    , imageFeaturesRight( imgFeaturesRight )
+  {
       imageLeft = imgLeft.clone();
       imageRight = imgRight.clone();
-
   }
 
   ImageFeatures imageFeaturesLeft;

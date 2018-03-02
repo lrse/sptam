@@ -41,107 +41,123 @@
   #include <opencv2/calib3d.hpp>  // decomposeProjectionMatrix
 #endif
 
-/**
- * Transform a 3D point in inhomogeneous representation to homogeneous
- */
-inline cv::Vec4d toHomo(const cv::Point3d& p)
+#include "cv2eigen.hpp"
+#include "eigen_alignment.hpp"
+
+namespace Eigen
 {
-  return cv::Vec4d( p.x, p.y, p.z, 1 );
+  typedef Matrix<double, 3, 4> Matrix34d;
 }
 
 /**
- * Transform a 2D point in inhomogeneous representation to homogeneous
+ * @brief Transform a 2D point in inhomogeneous representation to homogeneous.
  */
-inline cv::Vec3d toHomo(const cv::Point2d& p)
+inline Eigen::Vector3d toHomo(const Eigen::Vector2d& p)
 {
-  return cv::Vec3d( p.x, p.y, 1 );
+  return Eigen::Vector3d( p[0], p[1], 1 );
 }
 
 /**
- * Transform a 3D point in homogeneous representation to inhomogeneous
+ * @brief Transform a 3D point in inhomogeneous representation to homogeneous.
+ */
+inline Eigen::Vector4d toHomo(const Eigen::Vector3d& p)
+{
+  return Eigen::Vector4d( p[0], p[1], p[2], 1 );
+}
+
+/**
+ * @brief Transform a 2D point in homogeneous representation to inhomogeneous.
+ */
+inline Eigen::Vector2d toInHomo(const Eigen::Vector3d& p)
+{
+  return Eigen::Vector2d(p[0], p[1]) / p[2];
+}
+
+/**
+ * @brief Transform a 3D point in homogeneous representation to inhomogeneous.
+ */
+inline Eigen::Vector3d toInHomo(const Eigen::Vector4d& p)
+{
+  return Eigen::Vector3d(p[0], p[1], p[2]) / p[3];
+}
+
+/**
+ * @brief Transform a 3D point in homogeneous representation to inhomogeneous.
  */
 inline cv::Point3d toInHomo(const cv::Vec4d& p)
 {
-  return cv::Point3d( p[0] / p[3], p[1] / p[3], p[2] / p[3] );
+  return cv::Point3d(p[0], p[1], p[2]) / p[3];
+}
+
+inline Eigen::Vector3d projectHomo(const Eigen::Matrix34d& projection, const Eigen::Vector3d& p)
+{
+  return projection * toHomo( p );
 }
 
 /**
- * Transform a 2D point in homogeneous representation to inhomogeneous
+ * @brief Project a 3D point to a 2D point, using a projection matrix.
  */
-inline cv::Point2d toInHomo(const cv::Vec3d& p)
+inline cv::Point2d project(const Eigen::Matrix34d& projection, const Eigen::Vector3d& p)
 {
-  return cv::Point2d( p[0] / p[2], p[1] / p[2] );
+  return eigen2cv( toInHomo( projectHomo(projection, p) ) );
 }
 
 /**
- * Project a 3D point to a 2D point, using a projection matrix
+ * @brief Project a vector of 3D points to a vector of 2D points, using a projection matrix.
  */
-inline cv::Point2d project(const cv::Matx34d& projection, const cv::Point3d& p)
-{
-  return toInHomo( projection * toHomo( p ) );
-}
-
-inline std::vector<cv::Point2d> project(const cv::Matx34d& projection, const std::vector<cv::Point3d>& points)
+inline std::vector<cv::Point2d> project(const Eigen::Matrix34d& projection, const std::aligned_vector<Eigen::Vector3d>& points)
 {
   std::vector<cv::Point2d> ret;
   ret.reserve( points.size() );
 
-  for ( auto point : points )
-    ret.push_back( project( projection, point ) );
+  for ( const auto& point : points )
+    ret.push_back( project(projection, point) );
 
   return ret;
 }
 
 /**
- * TYransform a 3D point into another coordinate frame,
- * using a transformation matrix
+ * @brief Compute 3x4 transformation matrix.
+ * @return T = [R|t].
  */
-inline cv::Point3d transform(const cv::Matx44d& transformation, const cv::Point3d& p)
+inline Eigen::Matrix34d computeTransformation(const Eigen::Matrix3d& rotation, const Eigen::Vector3d& translation)
 {
-  return toInHomo( transformation * toHomo( p ) );
+  Eigen::Matrix34d transformation = Eigen::Matrix34d::Identity();
+
+  transformation.block<3, 3>(0, 0) = rotation;
+  transformation.block<3, 1>(0, 3) = translation;
+
+  return transformation;
 }
 
-// T = [R|t]
-inline cv::Matx34d ComputeTransformation(const cv::Matx33d& rotation, const cv::Vec3d& translation)
+/**
+ * @brief Compute 3x4 projection matrix.
+ * @return P = K[R|t].
+ */
+inline Eigen::Matrix34d computeProjection(const Eigen::Matrix3d& intrinsic, const Eigen::Matrix3d& rotation, const Eigen::Vector3d& translation)
 {
-  return cv::Matx34d(
-    rotation(0, 0), rotation(0, 1), rotation(0, 2), translation[0],
-    rotation(1, 0), rotation(1, 1), rotation(1, 2), translation[1],
-    rotation(2, 0), rotation(2, 1), rotation(2, 2), translation[2]
-  );
+  return intrinsic * computeTransformation(rotation, translation);
 }
 
-// T = [R|t]
-inline cv::Matx44d ComputeTransformation44(const cv::Matx33d& rotation, const cv::Vec3d& translation)
+/**
+ * @brief Efficiently compute inverse transformation.
+ */
+inline Eigen::Matrix34d inverseTransformation(const Eigen::Matrix34d& transformation)
 {
-  return cv::Matx44d(
-    rotation(0, 0), rotation(0, 1), rotation(0, 2), translation[0],
-    rotation(1, 0), rotation(1, 1), rotation(1, 2), translation[1],
-    rotation(2, 0), rotation(2, 1), rotation(2, 2), translation[2],
-    0, 0, 0, 1
-  );
+  Eigen::Matrix34d inverse = Eigen::Matrix34d::Identity();
+
+  // O = R^t
+  inverse.block<3, 3>(0, 0) = transformation.block<3, 3>(0, 0).transpose();
+
+  // p = -R^t * t
+  inverse.block<3, 1>(0, 3) = - inverse.block<3, 3>(0, 0) * transformation.block<3, 1>(0, 3);
+
+  return inverse;
 }
 
-// [R|t] = T
-inline void DecomposeTransformation44(const cv::Matx44d T, cv::Matx33d& rotation, cv::Vec3d& translation)
-{
-  translation = cv::Vec3d( T(0, 3), T(1, 3), T(2, 3) );
-
-  rotation = cv::Matx33d(
-    T(0, 0), T(0, 1), T(0, 2),
-    T(1, 0), T(1, 1), T(1, 2),
-    T(2, 0), T(2, 1), T(2, 2)
-  );
-}
-
-// P = K[R|t]
-inline cv::Matx34d ComputeProjection(const cv::Matx33d& intrinsic, const cv::Matx33d& rotation, const cv::Vec3d& translation)
-{
-  return intrinsic * ComputeTransformation(rotation, translation);
-}
-
+/*
 // K[R|t] = P
-inline void DecomposeProjection(const cv::Matx34d& projection, cv::Matx33d& intrinsic, cv::Matx33d& rotation, cv::Vec3d& translation)
+inline void decomposeProjection(const cv::Matx34d& projection, cv::Matx33d& intrinsic, cv::Matx33d& rotation, cv::Vec3d& translation)
 {
   cv::Vec4d posH;
   cv::decomposeProjectionMatrix(projection, intrinsic, rotation, posH);
@@ -149,7 +165,7 @@ inline void DecomposeProjection(const cv::Matx34d& projection, cv::Matx33d& intr
   // decompose devuelve la posicion en coordenadas homogeneas.
   // primero la convertimos a inhomogeneas, y luego obtenemos
   // la traslacion
-  translation = -rotation * (cv::Vec3d(posH[0], posH[1], posH[2]) / posH[3]);
+  translation = -rotation * toInHomo( posH );
 }
 
 inline cv::Matx33d ComputeFundamentalMat (
@@ -212,4 +228,4 @@ inline cv::Matx33d ComputeFundamentalMat(const cv::Matx34d& projectionC1, const 
     intrinsicC1, rotationC1, translationC1,
     intrinsicC2, rotationC2, translationC2
   );
-}
+}*/

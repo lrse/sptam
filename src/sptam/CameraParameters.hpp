@@ -32,13 +32,6 @@
  */
 #pragma once
 
-#include "opencv2/core/version.hpp"
-#if CV_MAJOR_VERSION == 2
-  #include <opencv2/core/core.hpp>
-#elif CV_MAJOR_VERSION == 3
-  #include <opencv2/core.hpp>
-#endif
-
 #include "../sptam/utils/projective_math.hpp"
 #include "RectifiedCameraParameters.hpp"
 
@@ -46,7 +39,7 @@ class CameraParameters
 {
   public:
 
-    CameraParameters(const cv::Matx33d& intrinsic, size_t image_width, size_t image_height, double frustum_near_plane_distance, double frustum_far_plane_distance, double baseline)
+    CameraParameters(const Eigen::Matrix3d& intrinsic, size_t image_width, size_t image_height, double frustum_near_plane_distance, double frustum_far_plane_distance, double baseline)
       : intrinsic_( intrinsic ), image_width_( image_width ), image_height_( image_height )
       , horizontal_fov_( computeFOV( intrinsic(0, 0), image_width ) )
       , vertical_fov_( computeFOV( intrinsic(1, 1), image_height ) )
@@ -62,7 +55,7 @@ class CameraParameters
       assert( intrinsic(0, 0) == intrinsic(1, 1) );
     }
 
-    inline const cv::Matx33d& intrinsic() const
+    inline const Eigen::Matrix3d& intrinsic() const
     { return intrinsic_; }
 
     inline float focalLength() const
@@ -97,7 +90,7 @@ class CameraParameters
 
   private:
 
-    cv::Matx33d intrinsic_;
+    Eigen::Matrix3d intrinsic_;
 
     size_t image_width_, image_height_;
 
@@ -117,5 +110,9 @@ class CameraParameters
     {
       return 2 * atan(image_size / (2 * focal_length)) * 180 / M_PI;
     }
+
+  public:
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 };

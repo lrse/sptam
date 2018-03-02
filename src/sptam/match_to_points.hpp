@@ -36,7 +36,7 @@
 #include "utils/Iterable.hpp"
 
 std::list<Match> matchToPoints(
-  const StereoFrame& frame, Iterable<sptam::Map::SharedPoint>&& mapPoints,
+  const StereoFrame& frame, ConstIterable<sptam::Map::SharedPoint>&& mapPoints,
   const cv::Ptr<cv::DescriptorMatcher> descriptorMatcher,
   const size_t matchingNeighborhoodThreshold,
   const double matchingDistanceThreshold,

@@ -32,7 +32,7 @@
  */
 
 #include "match_to_points.hpp"
-#include "utils/cv2eigen.hpp"
+#include "utils/eigen_alignment.hpp"
 
 #if SHOW_PROFILING
 #include "utils/timer.h"
@@ -40,7 +40,7 @@
 #endif
 
 std::list<Match> matchToPoints(
-  const StereoFrame& frame, Iterable<sptam::Map::SharedPoint>&& mapPoints,
+  const StereoFrame& frame, ConstIterable<sptam::Map::SharedPoint>&& mapPoints,
   const cv::Ptr<cv::DescriptorMatcher> descriptorMatcher,
   const size_t matchingNeighborhoodThreshold,
   const double matchingDistanceThreshold,
@@ -52,14 +52,14 @@ std::list<Match> matchToPoints(
   t_find.start();
 #endif
 
-  std::vector<cv::Point3d> points;
+  std::aligned_vector<Eigen::Vector3d> points;
   std::vector<cv::Mat> descriptors;
 
   points.reserve( mapPoints.size() );
   descriptors.reserve( mapPoints.size() );
 
   for ( const auto& mapPoint : mapPoints ) {
-    points.push_back( eigen2cv( mapPoint->GetPosition() ) );
+    points.push_back( mapPoint->GetPosition() );
     descriptors.push_back( mapPoint->GetDescriptor() );
   }
 

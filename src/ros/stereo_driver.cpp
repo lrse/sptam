@@ -35,6 +35,7 @@
 #include "utils/opencv_parsers.hpp"
 #include "../sptam/FeatureExtractorThread.hpp"
 #include "../sptam/TrackerViewStereo.hpp"
+#include "../sptam/utils/cv2eigen.hpp"
 
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
@@ -88,7 +89,7 @@ sptam::stereo_driver::stereo_driver(ros::NodeHandle& nh, ros::NodeHandle& nhp)
     Logger::Write( "#   FrustumNearPlaneDist: " + std::to_string(  frustum_near_plane_distance_ ) + "\n" );
     Logger::Write( "#   FrustumFarPlaneDist: " + std::to_string(  frustum_far_plane_distance_ ) + "\n" );
   #endif
-  
+
   #ifdef USE_LOOPCLOSURE
   loop_detector_ = nullptr;
   // Loop detector vocabulary parameters
@@ -97,18 +98,18 @@ sptam::stereo_driver::stereo_driver(ros::NodeHandle& nh, ros::NodeHandle& nhp)
     nhp.param<std::string>("LoopDetectorVocabulary", lcd_vocabulary, "");
     ROS_INFO_STREAM("Loop Detector initializing, loading vocabulary");
     try{
-      
+
       if(descriptor_name.compare("BRIEF") == 0){
         DLDLoopDetector<DBoW2::FBrief>::Parameters lcd_param;
         loop_detector_.reset(new DLDLoopDetector<DBoW2::FBrief>(lcd_vocabulary, lcd_param));
       }else if(descriptor_name.compare("BRISK") == 0){
         DLDLoopDetector<DBoW2::FBRISK>::Parameters lcd_param;
-        loop_detector_.reset(new DLDLoopDetector<DBoW2::FBRISK>(lcd_vocabulary, lcd_param));    
+        loop_detector_.reset(new DLDLoopDetector<DBoW2::FBRISK>(lcd_vocabulary, lcd_param));
       }else
         ROS_INFO("Loop Detector could not initialize");
-        
+
       sptam_->setLoopClosing(loop_detector_);
-    
+
     } catch (const std::string& exc) {
         ROS_INFO("Loop Detector could not initialize");
         std::cerr << exc << std::endl;
@@ -327,8 +328,8 @@ void sptam::stereo_driver::loadCameraCalibration(
   left_roi_ = cameraLeft.rawRoi();
   right_roi_ = cameraRight.rawRoi();
 
-  cameraParametersLeft_ = std::make_unique<CameraParameters>(intrinsic, left_roi_.width, left_roi_.height, frustum_near_plane_distance_,  frustum_far_plane_distance_, stereo_baseline_);
-  cameraParametersRight_ = std::make_unique<CameraParameters>(intrinsic, right_roi_.width, right_roi_.height, frustum_near_plane_distance_,  frustum_far_plane_distance_, stereo_baseline_);
+  cameraParametersLeft_ = std::make_unique<CameraParameters>(cv2eigen(intrinsic), left_roi_.width, left_roi_.height, frustum_near_plane_distance_,  frustum_far_plane_distance_, stereo_baseline_);
+  cameraParametersRight_ = std::make_unique<CameraParameters>(cv2eigen(intrinsic), right_roi_.width, right_roi_.height, frustum_near_plane_distance_,  frustum_far_plane_distance_, stereo_baseline_);
 }
 
 void sptam::stereo_driver::processTrackerView(const uint32_t seq, const ros::Time& time, const TrackerView& tracker_view_abstract) const

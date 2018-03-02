@@ -32,10 +32,10 @@
  */
 
 #include "MapMaker.hpp"
+#include "BundleDriver.hpp"
 #include "match_to_points.hpp"
 #include "utils/macros.hpp"
 #include "utils/projective_math.hpp"
-#include "utils/cv2eigen.hpp"
 #include <boost/range/adaptor/indirected.hpp>
 
 #include "opencv2/core/version.hpp"
@@ -53,15 +53,10 @@
 MapMaker::MapMaker(sptam::Map& map, const Parameters& params)
   : map_( map )
   , rowMatcher_( params.matchingDistanceThreshold, params.descriptorMatcher, params.epipolarDistanceThreshold )
-  , LBA_keyframes_window_( params.nKeyFramesToAdjustByLocal ), params_( params )
+  , params_( params ), keyframe_window_( params.nKeyFramesToAdjustByLocal )
 {}
 
-void MapMaker::InterruptBA()
-{
-  bundleDriver_.Break();
-}
-
-void MapMaker::CleanupMap(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
+void MapMaker::CleanupMap(ConstIterable<sptam::Map::SharedKeyFrame>&& keyFrames)
 {
   #ifdef SHOW_PROFILING
     sptam::ScopedProfiler timer(" ba handleBadPoints: ");
@@ -71,10 +66,10 @@ void MapMaker::CleanupMap(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
   // and select the bad ones
   sptam::Map::SharedMapPointSet bad_points; // use a set to avoid same MapPoints
 
-  for ( sptam::Map::SharedKeyFrame& keyFrame : keyFrames )
-    for ( sptam::Map::SharedMeas& meas : keyFrame->measurements() )
+  for ( const sptam::Map::SharedKeyFrame& keyFrame : keyFrames )
+    for ( const sptam::Map::SharedMeas& meas : keyFrame->measurements() )
     {
-      sptam::Map::SharedPoint& mapPoint = meas->mapPoint();
+      const sptam::Map::SharedPoint& mapPoint = meas->mapPoint();
 
       if ( mapPoint->IsBad() )
         bad_points.insert( mapPoint );
@@ -103,39 +98,8 @@ void MapMaker::CleanupMap(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
   }
 }
 
-void MapMaker::FillLBAKeyframesWindow(sptam::Map::SharedKeyFrame keyframe) {
-
-  // Get a copy of the covisibility kf of the most recent keyframe extracted from the queue
-  std::vector< std::pair<sptam::Map::SharedKeyFrame, size_t> > covisibilityRecentKeyframes = keyframe->covisibilityKeyFramesVector();
-
-  // get a fix number of covisibility keyframes to be treated (at most, the window size, since covisible keyframes may already be in the window and won't add anything new)
-  size_t nCovisibilityKeyframes = std::min( (size_t)params_.nKeyFramesToAdjustByLocal, covisibilityRecentKeyframes.size() );
-  std::vector< std::pair<sptam::Map::SharedKeyFrame, size_t> > orderedCovisibilityKeyframes( nCovisibilityKeyframes );
-
-  // Get the N highest covisibility keyframes (warning: linear complexity)
-  std::partial_sort_copy (covisibilityRecentKeyframes.begin(), covisibilityRecentKeyframes.end(), orderedCovisibilityKeyframes.begin(), orderedCovisibilityKeyframes.end(),  [](const auto& a, const auto& b) { return a.second > b.second; });
-
-  for (const auto& p : orderedCovisibilityKeyframes)
-  {
-    // get the keyframe with the highest covisibility
-    sptam::Map::SharedKeyFrame covisibilityKeyframe = p.first;
-
-    // check if the covisibility keyframe is in the safe window
-    if( !(std::find(LBA_keyframes_window_.begin(), LBA_keyframes_window_.end(), covisibilityKeyframe) != LBA_keyframes_window_.end()) ) {
-      if ( isSafe( covisibilityKeyframe ) ) {
-        LBA_keyframes_window_.push_back( covisibilityKeyframe );
-        if (LBA_keyframes_window_.size() == (size_t)params_.nKeyFramesToAdjustByLocal) break; // if window is complete, terminate
-      }
-    }
-  }
-}
-
 sptam::Map::SharedKeyFrame MapMaker::AddKeyFrame(const StereoFrame& frame, /*const */std::list<Match>& measurements)
 {
-  #ifdef SHOW_PROFILING
-    sptam::ScopedProfiler timer(" ba totalba: ");
-  #endif
-
   sptam::Map::SharedKeyFrame keyFrame = map_.AddKeyFrame( frame );
 
   // Create new 3D points from unmatched features,
@@ -147,60 +111,16 @@ sptam::Map::SharedKeyFrame MapMaker::AddKeyFrame(const StereoFrame& frame, /*con
   for ( auto& match : measurements )
       map_.addMeasurement( keyFrame, match.mapPoint, match.measurement );
 
-  /*#ifdef SHOW_PROFILING
-    WriteToLog(" ba totalKeyFrames: ", map_.nKeyFrames());
-    WriteToLog(" ba totalPoints: ", map_.nMapPoints());
-  #endif*/
+  sptam::Map::SharedKeyFrameList new_keyframes;
+  new_keyframes.push_back( keyFrame );
 
-  // GENERAL MAINTAINANCE
-
-  // Refine Newly made points (the ones added from stereo matches
-  // when the last keyframe came in)
-
-  // Fill in new_points and update LBA_keyframes_window_.
-  LBA_keyframes_window_.clear(); // clear previous Local BA processed keyframes
-
-  LBA_keyframes_window_.push_back( keyFrame );
-
-  FillLBAKeyframesWindow( keyFrame );
-
-  #ifdef SHOW_PROFILING
-  {
-    sptam::ScopedProfiler timer2(" ba refind_newly_made: ");
-  #endif
-
-  std::list<sptam::Map::SharedPoint> aux_newpoints = getPointsCreatedBy( keyFrame );
-  /*int nFound = */ReFind( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ), ListIterable<sptam::Map::SharedPoint>::from( aux_newpoints ) );
-
-  #ifdef SHOW_PROFILING
-  }
-  #endif
-
-  #ifdef SHOW_PROFILING
-  {
-    sptam::ScopedProfiler timer2(" ba local: ");
-  #endif
-
-  BundleAdjust( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ) );
-
-  #ifdef SHOW_PROFILING
-  }
-  #endif
-
-  #ifdef USE_LOOPCLOSURE
-  /* Notifying newly added keyframe to Loop Closure service */
-  if(loopclosing_ != nullptr)
-    loopclosing_->addKeyFrame(keyFrame);
-  #endif
-
-  // Remove bad points marked by BA
-
-  CleanupMap( ListIterable<sptam::Map::SharedKeyFrame>::from( LBA_keyframes_window_ ) );
+  sptam::Map::SharedKeyFrameSet adjustable_keyframes, fixed_keyframes;
+  BundleAdjust(new_keyframes, adjustable_keyframes, fixed_keyframes, [](const sptam::Map::SharedKeyFrame&){ return true; });
 
   return keyFrame;
 }
 
-void MapMaker::addStereoPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame, const std::vector<MapPoint,Eigen::aligned_allocator<MapPoint>>& points, const std::vector<Measurement>& measurements)
+void MapMaker::addStereoPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame, const std::aligned_vector<MapPoint>& points, const std::vector<Measurement>& measurements)
 {
   #ifdef SHOW_PROFILING
     sptam::Timer t_lock_add_points;
@@ -235,7 +155,7 @@ void MapMaker::addStereoPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame, c
 
 void MapMaker::createNewPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame)
 {
-  std::vector<MapPoint,Eigen::aligned_allocator<MapPoint>> points;
+  std::aligned_vector<MapPoint> points;
   std::vector<Measurement> measurements;
 
   #ifdef SHOW_PROFILING
@@ -253,62 +173,31 @@ void MapMaker::createNewPoints(/*const */sptam::Map::SharedKeyFrame& keyFrame)
   addStereoPoints(keyFrame, points, measurements);
 }
 
-// dummy function in sequential mode (there is no safe window)
-bool MapMaker::isSafe(sptam::Map::SharedKeyFrame keyframe) {
-  return true;
-}
-
-sptam::Map::SharedKeyFrameSet MapMaker::getSafeCovisibleKFs(sptam::Map::SharedKeyFrameSet& baseKFs)
+bool MapMaker::BundleAdjust(const std::list< sptam::Map::SharedKeyFrame >& new_keyframes, sptam::Map::SharedKeyFrameSet& adjustable_keyframes, sptam::Map::SharedKeyFrameSet& fixed_keyframes, std::function<bool(const sptam::Map::SharedKeyFrame&)> isSafe)
 {
-  sptam::Map::SharedKeyFrameSet covisibleKFs;
+  #ifdef SHOW_PROFILING
+  sptam::ScopedProfiler timer_totalba(" ba totalba: ");
+  #endif
 
-  for ( const sptam::Map::SharedKeyFrame& keyFrame : baseKFs )
-    for (auto& kv : keyFrame->covisibilityKeyFrames())
-    {
-      const sptam::Map::SharedKeyFrame& covisible_keyframe = kv.first;
+  BundleDriver bundle_adjuster;
 
-      if( !baseKFs.count( covisible_keyframe ) )
-        if ( isSafe( covisible_keyframe ) )
-          covisibleKFs.insert( covisible_keyframe );
-    }
+  /////////////////
+  // Populate BA //
+  /////////////////
 
-  return covisibleKFs;
-}
+  keyframe_window_.populateBA(new_keyframes, bundle_adjuster, adjustable_keyframes, fixed_keyframes, isSafe);
 
-bool MapMaker::BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
-{
-  sptam::Map::SharedKeyFrameSet sAdjustSet, sFixedSet;
+  ///////////////////////
+  // Refind newly made //
+  ///////////////////////
 
   #ifdef SHOW_PROFILING
   {
-    sptam::ScopedProfiler timer(" ba local_select: ");
+    sptam::ScopedProfiler timer(" ba refind_newly_made: ");
   #endif
 
-  for ( sptam::Map::SharedKeyFrame& keyFrame : keyFrames )
-    if ( not keyFrame->isFixed() )
-      sAdjustSet.insert( keyFrame );
-
-  /* Any other keyframe inside the safe window that measure above points shared, will be used as fixed keyframe
-   * Gaston: Loop Closure safe window its defined in the multi-threaded version through sincronization messages  */
-  sFixedSet = getSafeCovisibleKFs( sAdjustSet );
-
-  #ifdef SHOW_PROFILING
-  }
-  #endif
-
-  #ifdef SHOW_PROFILING
-  {
-    sptam::ScopedProfiler timer(" ba local_load: ");
-  #endif
-
-  //std::cout << "BA Local: kf adj: " << sAdjustSet.size() << " kf fix: " <<  sFixedSet.size() << " points: " << points.size() << std::endl;
-
-  // load the data into the bundle adjuster
-  // No need to take a lock for the points, since the points are
-  // aquired from the keyframe measurements and not the Map collection.
-  ConstIterable<sptam::Map::SharedKeyFrame> aux1 = sptam::Map::Graph::createIterable( sAdjustSet );
-  ConstIterable<sptam::Map::SharedKeyFrame> aux2 = sptam::Map::Graph::createIterable( sFixedSet );
-  bundleDriver_.SetData(aux1, aux2);
+  std::list<sptam::Map::SharedPoint> new_points = getPointsCreatedBy( new_keyframes );
+  /*int nFound = */ReFind( ConstSetIterable<sptam::Map::SharedKeyFrame>::from( adjustable_keyframes ), ConstListIterable<sptam::Map::SharedPoint>::from( new_points ) );
 
   #ifdef SHOW_PROFILING
   }
@@ -321,7 +210,7 @@ bool MapMaker::BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
     t_adjust.start();
   #endif
 
-  bool was_completed = bundleDriver_.Adjust( params_.maxIterationsLocal );
+  bool was_completed = bundle_adjuster.Adjust( params_.maxIterationsLocal );
 
   #ifdef SHOW_PROFILING
     t_adjust.stop();
@@ -337,7 +226,7 @@ bool MapMaker::BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
 
   // save data even if BA was interrupted
   /* NOTE: Gaston: No need for asking map lock as MapPoints have internal locking */
-  bundleDriver_.SavePoints();
+  bundle_adjuster.SavePoints();
 
   #ifdef SHOW_PROFILING
   }
@@ -349,7 +238,7 @@ bool MapMaker::BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
   #endif
 
   // No lock is required: The keyframes have an internal lock for their modification
-  bundleDriver_.SaveCameras();
+  bundle_adjuster.SaveCameras();
 
   #ifdef SHOW_PROFILING
   }
@@ -362,17 +251,27 @@ bool MapMaker::BundleAdjust(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames)
 
   if ( was_completed )
   {
-    std::list< sptam::Map::SharedMeas > aux = bundleDriver_.GetBadMeasurements();
+    std::list< sptam::Map::SharedMeas > aux = bundle_adjuster.GetBadMeasurements();
     RemoveMeasurements( ListIterable<sptam::Map::SharedMeas>::from( aux ) );
   }
   else
     std::cout << "BA LOCAL NO CONVERGIO" << std::endl;
 
-  bundleDriver_.Clear();
-
   #ifdef SHOW_PROFILING
   }
   #endif
+
+  #ifdef USE_LOOPCLOSURE
+  /* Notifying newly added keyframe to Loop Closure service */
+  if(loopclosing_ != nullptr)
+    loopclosing_->addKeyFrames(new_keyframes);
+  #endif
+
+  // If Mapper thread was intrrupted, don't do any cleanup.
+  if ( not was_completed )
+    return was_completed;
+
+  CleanupMap( ConstSetIterable<sptam::Map::SharedKeyFrame>::from( adjustable_keyframes ) );
 
   return was_completed;
 }
@@ -388,6 +287,19 @@ std::list<sptam::Map::SharedPoint> MapMaker::getPointsCreatedBy(const sptam::Map
   return newMapPoints;
 }
 
+std::list<sptam::Map::SharedPoint> MapMaker::getPointsCreatedBy(const std::list<sptam::Map::SharedKeyFrame>& keyframes)
+{
+  std::list<sptam::Map::SharedPoint> new_points;
+
+  for ( auto keyframe : keyframes )
+  {
+    std::list<sptam::Map::SharedPoint> new_points_from_keyframe = getPointsCreatedBy( keyframe );
+    new_points.insert(new_points.end(), new_points_from_keyframe.begin(), new_points_from_keyframe.end());
+  }
+
+  return new_points;
+}
+
 bool MapMaker::isUnmatched(const sptam::Map::KeyFrame& keyFrame, const sptam::Map::SharedPoint& mapPoint)
 {
   return not mapPoint->IsBad() and keyFrame.canView( *mapPoint );
@@ -397,18 +309,18 @@ bool MapMaker::isUnmatched(const sptam::Map::KeyFrame& keyFrame, const sptam::Ma
  * Helper function. Filters points that could be
  * potential matches for a frame.
  */
-std::list< sptam::Map::SharedPoint > MapMaker::filterUnmatched(const sptam::Map::KeyFrame& keyFrame, Iterable<sptam::Map::SharedPoint>& mapPoints)
+std::list< sptam::Map::SharedPoint > MapMaker::filterUnmatched(const sptam::Map::KeyFrame& keyFrame, ConstIterable<sptam::Map::SharedPoint>& mapPoints)
 {
   std::list< sptam::Map::SharedPoint > filtered_points;
 
-  for ( sptam::Map::SharedPoint& mapPoint : mapPoints )
+  for ( const sptam::Map::SharedPoint& mapPoint : mapPoints )
     if ( isUnmatched( keyFrame, mapPoint ) )
       filtered_points.push_back( mapPoint );
 
   return filtered_points;
 }
 
-size_t MapMaker::ReFind(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames, Iterable<sptam::Map::SharedPoint>&& new_points)
+size_t MapMaker::ReFind(ConstIterable<sptam::Map::SharedKeyFrame>&& keyFrames, ConstIterable<sptam::Map::SharedPoint>&& new_points)
 {
   // Is there new points?
   if( new_points.empty() )
@@ -416,15 +328,15 @@ size_t MapMaker::ReFind(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames, Iterab
 
   size_t nFound = 0;
 
-  for( sptam::Map::SharedKeyFrame& keyFrame : keyFrames)
+  for( const sptam::Map::SharedKeyFrame& keyFrame : keyFrames)
   {
     std::list< sptam::Map::SharedPoint > filtered_points = filterUnmatched(*keyFrame, new_points);
 
-    for( sptam::Map::SharedPoint& mapPoint : filtered_points )
+    for( const sptam::Map::SharedPoint& mapPoint : filtered_points )
       mapPoint->IncreaseProjectionCount();
 
     std::list<Match> matches = matchToPoints(
-      *keyFrame, ListIterable<sptam::Map::SharedPoint>::from( filtered_points )
+      *keyFrame, ConstListIterable<sptam::Map::SharedPoint>::from( filtered_points )
       , params_.descriptorMatcher, params_.matchingNeighborhoodThreshold
       , params_.matchingDistanceThreshold, Measurement::SRC_REFIND
     );
@@ -442,19 +354,8 @@ size_t MapMaker::ReFind(Iterable<sptam::Map::SharedKeyFrame>&& keyFrames, Iterab
 
 void MapMaker::RemoveMeasurements(Iterable<sptam::Map::SharedMeas>&& measurements)
 {
-  for ( sptam::Map::SharedMeas& meas : measurements ) {
+  for ( const sptam::Map::SharedMeas& meas : measurements ) {
     meas->mapPoint()->IncreaseOutlierCount();
     map_.removeMeasurement( meas );
   }
 }
-
-/*void MapMaker::RemoveBadKeyFrames(const ConstIterable<sptam::Map::SharedKeyFrame>& keyFrames)
-{
-  for ( const sptam::Map::SharedKeyFrame& keyFrame : keyFrames ) {
-    //    std::cout << "KF: " << keyFrame.GetId() << " meas: " << keyFrame.measurements().size() << std::endl;
-    // If keyframe is considered "bad"
-    if ( keyFrame->measurements().size() < MIN_NUM_MEAS ) {
-      map_.RemoveKeyFrame( keyFrame );
-    }
-  }
-}*/

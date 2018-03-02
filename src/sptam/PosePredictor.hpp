@@ -32,7 +32,13 @@
  */
 #pragma once
 
-#include <ros/ros.h> // ros::Time
+// ros::Time
+#ifdef BUILDING_ROS
+#include <ros/ros.h>
+#else
+#include "../sptam/utils/time/time.h"
+#endif
+
 #include <eigen3/Eigen/Geometry>
 
 namespace Eigen

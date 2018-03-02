@@ -38,7 +38,6 @@ namespace sptam{
 
 struct RectifiedCameraParameters
 {
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   const double baseline;
   const Eigen::Vector2d focal_length;
   const Eigen::Vector2d principal_point;

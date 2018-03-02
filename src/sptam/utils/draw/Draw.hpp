@@ -77,15 +77,9 @@ void makeColorCopy(const cv::Mat& in, cv::Mat& out);
 template<class T>
 void drawProjectionCovariances(const Frame& frame, cv::Mat& image, const T& points);
 
-void drawFeatures(const cv::Matx34d& projection, const std::vector<cv::Point3d>& points, const std::vector<MEAS>& features,
-                  const cv::Scalar& color_proj, const cv::Scalar& color_feat, cv::Mat& image);
-
-void drawFeatures(const cv::Matx34d& projection, const std::vector<Measurement>& measurements,
-                  const cv::Scalar& color_proj, const cv::Scalar& color_feat, cv::Mat& image);
-
 void drawGrid(cv::Mat& image, const size_t cell_size, const cv::Scalar& color = COLOR_GREY);
 
-void drawProjections(cv::Mat& image, const cv::Matx34d& projection, const ConstIterable<sptam::Map::Point>& mapPoints, const cv::Scalar& color = COLOR_BLUE);
+void drawProjections(cv::Mat& image, const Eigen::Matrix34d& projection, const ConstIterable<sptam::Map::Point>& mapPoints, const cv::Scalar& color = COLOR_BLUE);
 
 /**
  * Save an image file for a frame with its measurements and their corresponding
@@ -100,7 +94,7 @@ void saveFrame(const Frame& frame, const std::string& fileName);
 //void saveStereoKeyFrame(const sptam::Map::KeyFrame& keyFrame, const std::string fileName);
 
 /**
- * DrawEpipolarLines dibuja todas las lineas epipolares en una imagen 
+ * DrawEpipolarLines dibuja todas las lineas epipolares en una imagen
  * dado los puntos y la matriz fundamental
  */
 void DrawEpipolarLine(

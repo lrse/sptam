@@ -33,8 +33,10 @@
 
 #include "Draw.hpp"
 #include "../macros.hpp"
-#include "../cv2eigen.hpp"
+#include "../../MEAS.hpp"
 #include "../projective_math.hpp"
+#include "../covariance_ellipsoid.hpp"
+#include "../eigen_alignment.hpp"
 
 // Confidence interval thresholds for 2 parameter function
 #define CHI2_THRESH_95 5.991
@@ -60,7 +62,7 @@ void drawPoint(cv::Mat& img, const cv::Point2d& point, cv::Scalar color)
 void drawFeatures(const sptam::Map::KeyFrame& frame, cv::Mat& image)
 {
   // Get Projection Matrix
-  cv::Matx34d projectionLeft = frame.GetFrameLeft().GetProjection();
+  Eigen::Matrix34d projectionLeft = frame.GetFrameLeft().GetProjection();
 
   // Draw matches
   for( const auto& measurement : frame.measurements() )
@@ -69,7 +71,7 @@ void drawFeatures(const sptam::Map::KeyFrame& frame, cv::Mat& image)
     {
       const MapPoint& mapPoint = *measurement->mapPoint();
 
-      cv::Point2d projectedPoint = project( projectionLeft, eigen2cv( mapPoint.GetPosition() ) );
+      cv::Point2d projectedPoint = project(projectionLeft, mapPoint.GetPosition());
       const cv::KeyPoint& featurePos_v = measurement->GetKeypoints()[0];
       cv::Point2d featurePos(featurePos_v.pt.x, featurePos_v.pt.y);
 
@@ -95,14 +97,14 @@ void drawFeatures(const sptam::Map::KeyFrame& frame, cv::Mat& image)
 /**
  * Draw a set of features an their projections onto an image
  */
-void drawFeatures(const cv::Matx34d& projection, const std::vector<cv::Point3d>& points, const std::vector<MEAS>& features,
+void drawFeatures(const Eigen::Matrix34d& projection, const std::aligned_vector<Eigen::Vector3d>& points, const std::vector<MEAS>& features,
                   const cv::Scalar& color_proj, const cv::Scalar& color_feat, cv::Mat& image)
 {
   // Draw matches
   forn( i, points.size() ) {
 
     const cv::Point2d& featurePos = features[ i ].keypoint.pt;
-    cv::Point2d projectedPoint = project( projection, points[ i ] );
+    cv::Point2d projectedPoint = project(projection, points[ i ]);
 
     // Dibujo la linea desde el feature detectado al feature predicho
     drawLine(image, featurePos, projectedPoint, COLOR_GREEN);
@@ -112,6 +114,66 @@ void drawFeatures(const cv::Matx34d& projection, const std::vector<cv::Point3d>&
   }
 }
 
+#include "../projection_derivatives.hpp"
+
+/**
+ * Draw the projections of a set of points onto an image recorded by a camera,
+ * as well as the corresponding covariance ellipses.
+ */
+template<class T>
+void drawProjectionCovariances(const Frame& frame, cv::Mat& image, const T& points)
+{
+  const Eigen::Matrix<double,3,4>& transformation = frame.GetCamera().GetTransformation();
+
+  const Eigen::Matrix6d& pose_covariance = frame.GetCameraPose().covariance();
+
+  Eigen::Matrix9d parameter_covariance = Eigen::Matrix9d::Zero();
+  parameter_covariance.block<6, 6>(0, 0) = pose_covariance;
+
+  Eigen::Matrix3d K = frame.GetCamera().GetIntrinsics();
+
+  for ( const sptam::Map::SharedPoint& mapPoint : points )
+  {
+    parameter_covariance.block<3, 3>(6, 6) = mapPoint->covariance();
+
+    cv::Point2d projectedPoint = project(frame.GetProjection(), mapPoint->GetPosition());
+
+    ////////////////////////////////////////////////////////////////////////////
+    // compute projection covariance
+    ////////////////////////////////////////////////////////////////////////////
+
+    Eigen::Matrix<double,2,6> jXj = jacobianXj(transformation, K, mapPoint->GetPosition());
+    Eigen::Matrix<double,2,3> jXi = jacobianXi(transformation, K, mapPoint->GetPosition());
+
+    // propagate both point and camera covariances
+    Eigen::Matrix<double, 2, 9> J;
+    J.block<2, 6>(0, 0) = jXj;
+    J.block<2, 3>(0, 6) = jXi;
+    // Eigen::Matrix2d projection_covariance = J * parameter_covariance * J.transpose();
+
+    // asume perfect 3D points and just propagate pose covariance
+    Eigen::Matrix2d projection_covariance = jXj * pose_covariance * jXj.transpose();
+
+    // asume perfect camera pose and just propagate point covariances
+    //~ Eigen::Matrix2d projection_covariance = jXi * point_covariance * jXi.transpose();
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Compute 2D covariance ellipse
+    ////////////////////////////////////////////////////////////////////////////
+
+    // 99% confidence ellipse
+    Ellipse2D ellipse = computeCovarianceEllipse(projection_covariance, PROB_95);
+
+    // To obtain the orientation of the ellipse, we simply calculate
+    // the angle of the largest eigenvector towards the x-axis.
+    double angle = atan2( ellipse.ax1[1], ellipse.ax1[0] );
+
+    cv::ellipse(image, projectedPoint, cv::Size(ellipse.len1, ellipse.len2), angle, 0, 360, COLOR_GREEN);
+  }
+}
+
+template void drawProjectionCovariances<sptam::Map::SharedMapPointList>(const Frame& frame, cv::Mat& image, const sptam::Map::SharedMapPointList& points);
+template void drawProjectionCovariances<sptam::Map::SharedMapPointSet>(const Frame& frame, cv::Mat& image, const sptam::Map::SharedMapPointSet& points);
 
 void drawFrame(const sptam::Map::KeyFrame& frame, const cv::Mat& image, cv::Mat& outImage)
 {
@@ -166,7 +228,6 @@ void makeColorCopy(const cv::Mat& in, cv::Mat& out)
     in.copyTo(out);
 }
 
-
 void drawGrid(cv::Mat& image, const size_t cell_size, const cv::Scalar& color)
 {
   // check that cell_size is possitive
@@ -185,16 +246,16 @@ void drawGrid(cv::Mat& image, const size_t cell_size, const cv::Scalar& color)
     cv::line(image, cv::Point2d(i,0), cv::Point2d(i,height), color);
 }
 
-void drawProjections(cv::Mat& image, const cv::Matx34d& projection, const ConstIterable<sptam::Map::Point>& mapPoints, const cv::Scalar& color)
+void drawProjections(cv::Mat& image, const Eigen::Matrix34d& projection, const ConstIterable<sptam::Map::Point>& mapPoints, const cv::Scalar& color)
 {
   for (const sptam::Map::Point& mapPoint : mapPoints)
   {
-    cv::Point2d projecion = project( projection, eigen2cv( mapPoint.GetPosition() ) );
+    cv::Point2d projecion = project(projection, mapPoint.GetPosition());
     drawPoint(image, projecion, color);
   }
 }
 
-void drawMeasurements(const cv::Matx34d& projection, const std::list<Match>& measurements,
+void drawMeasurements(const Eigen::Matrix34d& projection, const std::list<Match>& measurements,
                   const cv::Scalar& color_proj, const cv::Scalar& color_feat, cv::Mat& image)
 {
   // Draw matches
@@ -202,7 +263,7 @@ void drawMeasurements(const cv::Matx34d& projection, const std::list<Match>& mea
   {
     const cv::KeyPoint& featurePos_v = match.measurement.GetKeypoints()[0];
     cv::Point2d featurePos(featurePos_v.pt.x, featurePos_v.pt.y);
-    cv::Point2d projectedPoint = project( projection, eigen2cv( match.mapPoint->GetPosition() ) );
+    cv::Point2d projectedPoint = project(projection, match.mapPoint->GetPosition());
 
     // Dibujo la linea desde el feature detectado al feature predicho
     drawLine(image, featurePos, projectedPoint, COLOR_GREEN);
@@ -211,7 +272,6 @@ void drawMeasurements(const cv::Matx34d& projection, const std::list<Match>& mea
     drawPoint(image, featurePos, color_feat);
   }
 }
-
 
 void drawMeasuredFeatures(const StereoFrame& frame, const std::list<Match>& measurements, cv::Mat& imgL, cv::Mat& imgR)
 {
@@ -233,8 +293,8 @@ void drawMeasuredFeatures(const StereoFrame& frame, const std::list<Match>& meas
   }
 
   // get projections matrices
-  cv::Matx34d projection_left = frame.GetFrameLeft().GetProjection();
-  cv::Matx34d projection_right = frame.GetFrameRight().GetProjection();
+  const Eigen::Matrix34d projection_left = frame.GetFrameLeft().GetProjection();
+  const Eigen::Matrix34d projection_right = frame.GetFrameRight().GetProjection();
 
   // draw measurements
   drawMeasurements(projection_left, meas_left, COLOR_YELLOW, COLOR_RED, imgL);
@@ -257,7 +317,7 @@ void drawMeasuredFeatures(const StereoFrame& frame, const std::list<Match>& meas
     }
   }
 
-  cv::Matx34d projection = (left ? frame.GetFrameLeft() : frame.GetFrameRight()).GetProjection();
+  const Eigen::Matrix34d projection = (left ? frame.GetFrameLeft() : frame.GetFrameRight()).GetProjection();
   drawMeasurements(projection, meas, COLOR_YELLOW, COLOR_RED, img);
 }
 
@@ -273,28 +333,6 @@ void saveFrame(const sptam::Map::KeyFrame& frame, const cv::Mat& image, const st
 }
 
 // TODO From here to the end of the file, we need to check what is useful and what not
-
-/**
- * Save Stereo KeyFrame whit its matches
- */
-//void saveStereoKeyFrame(const sptam::Map::KeyFrame& keyFrame, const cv::Mat& _imageLeft, const cv::Mat& _imageRight, const std::string fileName)
-//{
-
-//  cv::Mat imageLeft = drawFrame( keyFrame, _imageLeft );
-//  cv::Mat imageRight = drawFrame( keyFrame, _imageRight );
-
-//  unsigned int width = imageLeft.cols;
-//  unsigned int height = imageRight.rows;
-//  cv::Mat outImage = cv::Mat(height * 2, width, imageLeft.type());
-//  imageLeft.copyTo(outImage(cv::Rect(0, 0, width, height)));
-//  imageRight.copyTo(outImage(cv::Rect(0, height, width, height)));
-
-//  // save image
-//  std::stringstream sstm;
-//  sstm << "./" << fileName << "_KeyFrame_" << keyFrame.GetId() << ".jpg";
-//  cv::imwrite(sstm.str(), outImage);
-//}
-
 
 void DrawEpipolarLine(cv::Mat& image,
                       const std::vector<cv::Point2d>& inlierPointsLeft,

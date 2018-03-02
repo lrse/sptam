@@ -35,13 +35,14 @@
 
 #include "macros.hpp"
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 #include "opencv2/core/version.hpp"
 #if CV_MAJOR_VERSION == 2
   #include <opencv2/core/eigen.hpp>
 #elif CV_MAJOR_VERSION == 3
 //  #include <opencv2/core.hpp>
 #endif
-
 
 inline Eigen::Vector2d cv2eigen(const cv::Point2d& p)
 {
@@ -56,6 +57,11 @@ inline Eigen::Vector3d cv2eigen(const cv::Point3d& p)
 inline Eigen::Vector3d cv2eigen(const cv::Vec3d& v)
 {
   return Eigen::Vector3d(v[0], v[1], v[2]);
+}
+
+inline cv::Point2d eigen2cv(const Eigen::Vector2d& v)
+{
+  return cv::Point2d(v[0], v[1]);
 }
 
 inline cv::Point3d eigen2cv(const Eigen::Vector3d& v)

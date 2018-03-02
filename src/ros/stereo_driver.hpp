@@ -126,6 +126,11 @@ class stereo_driver : public base_driver
      */
     void loadCameraCalibration( const sensor_msgs::CameraInfoConstPtr& l_info_msg,
                                 const sensor_msgs::CameraInfoConstPtr& r_info_msg );
+
+  public:
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 }; // stereo_driver
 
 }; // sptam

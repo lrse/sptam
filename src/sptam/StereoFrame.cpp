@@ -72,7 +72,7 @@ StereoFrame::StereoFrame(const StereoFrame& stereoFrame)
 #define PROFILE_INTERNAL_MATCH 0
 
 void StereoFrame::FindMatches(const Measurement::Source source,
-  const std::vector<cv::Point3d>& points, const std::vector<cv::Mat>& descriptors,
+  const std::aligned_vector<Eigen::Vector3d>& points, const std::vector<cv::Mat>& descriptors,
   const cv::DescriptorMatcher& descriptorMatcher,
   const size_t matchingNeighborhoodThreshold, const double matchingDistanceThreshold,
   std::list<size_t>& matchedIndexes, std::list<Measurement>& measurements
@@ -185,7 +185,7 @@ void StereoFrame::FindMatches(const Measurement::Source source,
 
 #define PROFILE_INTERNAL_TRIANGULATE 0
 
-void StereoFrame::TriangulatePoints(const RowMatcher& matcher, std::vector<MapPoint, Eigen::aligned_allocator<MapPoint> > &points, std::vector<Measurement> &measurements)/* const*/
+void StereoFrame::TriangulatePoints(const RowMatcher& matcher, std::aligned_vector<MapPoint> &points, std::vector<Measurement> &measurements)/* const*/
 {
 #if defined(SHOW_PROFILING) && PROFILE_INTERNAL_TRIANGULATE
   sptam::Timer t_lock, t_create;
@@ -260,7 +260,7 @@ void StereoFrame::CreatePoints(
   const RowMatcher& matcher,
   const std::vector<cv::KeyPoint>& keypointsLeft, const cv::Mat& allDescriptorsLeft,
   const std::vector<cv::KeyPoint>& keypointsRight, const cv::Mat& allDescriptorsRight,
-  std::vector<MapPoint, Eigen::aligned_allocator<MapPoint> >& points, std::list<std::pair<size_t, size_t>>& matches
+  std::aligned_vector<MapPoint>& points, std::list<std::pair<size_t, size_t>>& matches
 )
 {
 #if defined(SHOW_PROFILING) && PROFILE_INTERNAL_CREATE
@@ -286,20 +286,11 @@ void StereoFrame::CreatePoints(
   const Camera& cameraRight = frameRight_.GetCamera();
 
   // Compute Projections matrices
-  cv::Matx34d projectionLeft = cameraLeft.GetProjection();
-  cv::Matx34d projectionRight = cameraRight.GetProjection();
+  cv::Matx34d projectionLeft = eigen2cv( cameraLeft.GetProjection() );
+  cv::Matx34d projectionRight = eigen2cv( cameraRight.GetProjection() );
 
-  // NO hace falta filtrar con la F dado que si luego de que los puntos son creados
-  // estos se proyectan nuevamente sobre la imagen  ambos metodos tienen los mismos resultados
-  // Compute Fundamental Matrix
-//  cv::Matx33d fundamentalMatrix = ComputeFundamentalMat(projectionLeft, projectionRight);
-
-//  std::vector<cv::DMatch> goodMatches = FilterMatchesByF( fundamentalMatrix, cvMatches,
-//                                                          keypointsLeft, keypointsRight,
-//                                                          epipolarDistanceThreshold, matchingDistanceThreshold );
   const std::vector<cv::DMatch>& goodMatches = cvMatches;
-//  std::cout << "F: Correct (by F) / Total matches: " << goodMatches.size() << " / " << cvMatches.size() << std::endl;
-
+  //std::cout << "F: Correct (by F) / Total matches: " << goodMatches.size() << " / " << cvMatches.size() << std::endl;
 
   std::vector<cv::Point2d> matchedPointsLeft;
   std::vector<cv::Point2d> matchedPointsRight;
@@ -329,20 +320,20 @@ void StereoFrame::CreatePoints(
   // Filter some more by viewing frustum and fill the return parameters
   for(int i = 0; i < point3DHomos.cols; ++i)
   {
-    cv::Point3d point = toInHomo(cv::Vec4d( point3DHomos.col(i) ));
+    Eigen::Vector3d point = cv2eigen( toInHomo(cv::Vec4d( point3DHomos.col(i) )) );
 
     // if the point is not in range of any camera it is discarded
-    if( not cameraLeft.CanView( cv2eigen( point ) ) || not cameraRight.CanView( cv2eigen( point ) ) )
+    if( not cameraLeft.CanView( point ) || not cameraRight.CanView( point ) )
       continue;
 
     // this indexes are for the original unmatched collections
     size_t idxLeft = goodMatches[i].queryIdx;
     size_t idxRight = goodMatches[i].trainIdx;
 
-    Eigen::Vector3d normal = cv2eigen( point ) - frameLeft_.GetPosition();
+    Eigen::Vector3d normal = point - frameLeft_.GetPosition();
     normal.normalize();
 
-    points.push_back( MapPoint( cv2eigen( point ), normal, allDescriptorsLeft.row( idxLeft ), INITIAL_POINT_COVARIANCE ) );
+    points.push_back( MapPoint( point, normal, allDescriptorsLeft.row( idxLeft ), INITIAL_POINT_COVARIANCE ) );
 
     matches.push_back( std::pair<size_t, size_t>(idxLeft, idxRight) );
   }

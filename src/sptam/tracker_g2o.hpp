@@ -34,10 +34,6 @@
 
 #include "Match.hpp"
 #include "CameraPose.hpp"
-#include "Measurement.hpp"
-#include "g2o_driver.hpp"
-
-#include <g2o/core/sparse_optimizer.h>
 
 namespace Eigen
 {
@@ -47,7 +43,6 @@ namespace Eigen
 class tracker_g2o
 {
   public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     /**
      * @brief This should be called for every frame of incoming stereo images.
@@ -66,16 +61,4 @@ class tracker_g2o
         not_enough_points()
           : std::runtime_error("Not enough points for tracking.") {}
     };
-
-  protected:
-
-  // G2O optimizer
-
-    G2ODriver g2o_driver_;
-
-  private:
-
-  // helper functions
-
-    Eigen::Matrix6d GetPoseCovariance(g2o::HyperGraph::Vertex& pose_vertex);
 };

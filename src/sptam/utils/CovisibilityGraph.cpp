@@ -31,6 +31,7 @@
  * University of Buenos Aires
  */
 #include "CovisibilityGraph.hpp"
+#include <iostream>
 
 /* These are the non-inline definitions for the CovisibilityGraph class methods
  * declared in CovisibilityGraph.hpp. Since the class is heavily templated, and
@@ -38,7 +39,7 @@
  * for each instantiation. So, for each instantiation of the class
  * CovisibilityGraph<A, B, C> you need to create a source (.cpp) file which
  * looks like the following:
- * 
+ *
  *   #include "CovisibilityGraph.cpp"
  *   template class CovisibilityGraph<A, B, C>;
  *
@@ -48,7 +49,7 @@
 template<typename KEYFRAME_T, typename MAP_POINT_T, typename MEAS_T>
 typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedKeyFrame CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::addKeyFrame( const KEYFRAME_T& keyFrame )
 {
-  SharedKeyFrame sKF(new KeyFrame( keyFrame ));
+  SharedKeyFrame sKF = std::make_shared_aligned<KeyFrame>( keyFrame );
 
   keyframes_.push_back(sKF);
 
@@ -70,7 +71,7 @@ void CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::removeKeyFrame( const C
 template<typename KEYFRAME_T, typename MAP_POINT_T, typename MEAS_T>
 typename CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedMapPoint CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::addMapPoint( const MAP_POINT_T& mapPoint )
 {
-  SharedMapPoint sMP(new MapPoint( mapPoint ));
+  SharedMapPoint sMP = std::make_shared_aligned<MapPoint>( mapPoint );
 
   mappoints_.push_back(sMP);
 
@@ -90,7 +91,7 @@ void CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::removeMapPoint( const C
 }
 
 template<typename KEYFRAME_T, typename MAP_POINT_T, typename MEAS_T>
-void CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::addMeasurement( SharedKeyFrame& keyFrame, SharedMapPoint& mapPoint, const MEAS_T& edge )
+void CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::addMeasurement(const SharedKeyFrame& keyFrame, const SharedMapPoint& mapPoint, const MEAS_T& edge)
 {
   /* Adding measurements to keyframes or mappoints that aren't in the graph, are discarted */
   if(keyFrame->to_container_ == keyframes_.end() or mapPoint->to_container_ == mappoints_.end())
@@ -111,7 +112,7 @@ void CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::addMeasurement( SharedK
 
     CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::SharedKeyFrame covisibilityKeyFrame ( meas_point->keyFrame() );
 
-    /* This operation isn't atomic, there exist a brief moment 
+    /* This operation isn't atomic, there exist a brief moment
      * where a keyframes is covisible to another but not viceversa*/
     keyFrame->addCovisibilityKeyframe( covisibilityKeyFrame );
     covisibilityKeyFrame->addCovisibilityKeyframe( keyFrame );
@@ -123,8 +124,8 @@ void CovisibilityGraph<KEYFRAME_T, MAP_POINT_T, MEAS_T>::addMeasurement( SharedK
 
   // add Keyframe-Point Measurement
 
-  SharedMeasurement meas = std::shared_ptr<Measurement>(new Measurement(edge, keyFrame, mapPoint));
-  /* There exist a moment where keyframe may be connected to the mappoint 
+  SharedMeasurement meas = std::make_shared_aligned<Measurement>(edge, keyFrame, mapPoint);
+  /* There exist a moment where keyframe may be connected to the mappoint
   * but not yet the mappoint to the keyframe (concurrency) */
   keyFrame->addMeasurement(meas);
   mapPoint->addMeasurement(meas);

@@ -52,7 +52,7 @@
 class MapPoint
 {
   public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
     MapPoint(const Eigen::Vector3d& position, const Eigen::Vector3d& normal, const cv::Mat& descriptor, const Eigen::Matrix3d& covariance);
 
     MapPoint(const MapPoint& mapPoint);

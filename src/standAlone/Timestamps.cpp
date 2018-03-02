@@ -35,8 +35,8 @@
 
 #include <fstream>
 #include <sstream>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/thread/thread.hpp> 
+#include <chrono>
+#include <thread> 
 
 #define SECONDS_TO_NANOSECONDS 1000000000
 
@@ -55,10 +55,16 @@ inline size_t word_count(const std::string& str)
 
 ros::Time getSystemTime()
 {
-  boost::posix_time::ptime t = boost::posix_time::microsec_clock::local_time();
-  boost::posix_time::time_duration duration = t - boost::posix_time::from_time_t( 0 );
+  typedef std::chrono::high_resolution_clock Time;
 
-  return ros::Time( duration.total_seconds(), duration.total_nanoseconds() );
+  auto t = Time::now().time_since_epoch();
+
+  auto seconds = std::chrono::duration_cast<std::chrono::seconds>( t );
+  auto seconds_in_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>( seconds );
+
+  auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>( t ) - seconds_in_nanoseconds;
+
+  return ros::Time( seconds.count(), nanoseconds.count() );
 }
 
 Timestamps::Timestamps(const double rate, size_t frame_ini)
@@ -97,7 +103,6 @@ Timestamps::Timestamps(const std::string& filename, size_t frame_ini)
     }
     else
       throw std::range_error("Error parsing timestamps file. Each line should contain one double or two unsigned ints.");
-
   }
 
   std::cout << "Loaded " << times_.size() << " timestamps poses" << std::endl;
@@ -112,21 +117,20 @@ ros::Time Timestamps::getNextWhenReady()
   // Compute time remainder so we don't go too fast, sleep if necessary
   if ( ros::Time(0) != last_time_update_ )
   {
+    assert( last_time_update_ <= current_time );
     double elapsed = ( current_time - last_time_update_ ).toSec();
     double cycle = ( next_time - last_time_ ).toSec();
     double to_sleep = cycle - elapsed;
 
     if ( to_sleep < 0 )
-      std::cerr << "WARNING tracking is slower than the camera feed by " << 1+to_sleep << " (s)" << std::endl;
+      std::cerr << "WARNING tracking is slower than the camera feed by " << -1*to_sleep << " (s)" << std::endl;
     else
-    {
-      boost::this_thread::sleep_for( boost::chrono::nanoseconds( (int)(to_sleep * SECONDS_TO_NANOSECONDS) ) );
-    }
+      std::this_thread::sleep_for( std::chrono::duration_cast<std::chrono::nanoseconds>( std::chrono::duration<double>( to_sleep ) ) );
   }
   #endif
 
   if ( constant_rate_ )
-    next_time_ += ros::Duration( rate_ );
+    next_time_ += ros::Time( rate_ );
   else
     next_frame_++;
 

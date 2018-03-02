@@ -54,13 +54,13 @@ class Camera
     inline const Eigen::Quaterniond& GetOrientation() const
     { return pose_.GetOrientationQuaternion(); }
 
-    inline const cv::Matx33d& GetIntrinsics() const
+    inline const Eigen::Matrix3d& GetIntrinsics() const
     { return calibration_.intrinsic(); }
 
-    inline const cv::Matx34d& GetTransformation() const
+    inline const Eigen::Matrix34d& GetTransformation() const
     { return transformation_; }
 
-    inline const cv::Matx34d& GetProjection() const
+    inline const Eigen::Matrix34d& GetProjection() const
     { return projection_; }
 
     inline const CameraParameters& GetCalibration() const
@@ -76,10 +76,10 @@ class Camera
     CameraParameters calibration_;
 
     // transform from world coordinates to camera coordinates.
-    cv::Matx34d transformation_;
+    Eigen::Matrix34d transformation_;
 
     // transform from world coordinates to image coordinates.
-    cv::Matx34d projection_;
+    Eigen::Matrix34d projection_;
 
     FrustumCulling frustum_;
 };

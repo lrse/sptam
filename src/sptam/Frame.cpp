@@ -46,8 +46,7 @@ Frame::Frame(const Camera& camera, const ImageFeatures& imageFeatures)
 
 #define PROFILE_INTERNAL 1
 
-std::list<std::pair<size_t, size_t> > Frame::FindMatches(
-  const std::vector<cv::Point3d>& points,
+std::list<std::pair<size_t, size_t> > Frame::FindMatches(const std::aligned_vector<Eigen::Vector3d>& points,
   const std::vector<cv::Mat>& descriptors,
   const cv::DescriptorMatcher& descriptorMatcher,
   const double matchingDistanceThreshold,

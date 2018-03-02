@@ -48,7 +48,6 @@
 // Eigen
 #include <Eigen/Core>
 #include <Eigen/Geometry>
-#include <Eigen/StdVector>
 
 // G2O
 #include <g2o/config.h>
@@ -199,7 +198,7 @@ g2o::VertexSE3* addVertex(g2o::SparseOptimizer& optimizer, const unsigned int& c
 }
 
 void configPoseGraph(const list<sptam::Map::SharedKeyFrame>& keyframes, const sptam::Map::SharedKeyFrame& queryKF, const sptam::Map::SharedKeyFrame& matchKF,
-                     const cv::Matx44d& match_pose, std::vector<std::tuple<size_t, size_t, Eigen::Isometry3d>, Eigen::aligned_allocator<std::tuple<size_t, size_t, Eigen::Isometry3d>>>& loop_frames,
+                     const cv::Matx44d& match_pose, std::aligned_vector<std::tuple<size_t, size_t, Eigen::Isometry3d>>& loop_frames,
                      g2o::SparseOptimizer& optimizer)
 {
   optimizer.setVerbose(false);
@@ -330,7 +329,7 @@ void updatePosesAndPoints(const Iterator begin, const Iterator end, const sptam:
 
     for(sptam::Map::SharedMeas& meas : (*keyframe)->measurements()){
       if(meas->GetSource() == Measurement::SRC_TRIANGULATION){
-        sptam::Map::SharedPoint& mp = meas->mapPoint();
+        const sptam::Map::SharedPoint& mp = meas->mapPoint();
 
         Eigen::Vector3d position = mp->GetPosition();
 
@@ -385,7 +384,7 @@ void updatePosesAndPoints(Iterator end, unsigned int size, const Eigen::Isometry
 
     for(auto& meas : (*keyframe)->measurements()){
       if(meas->GetSource() == Measurement::SRC_TRIANGULATION){
-        sptam::Map::SharedPoint& mp = meas->mapPoint();
+        const sptam::Map::SharedPoint& mp = meas->mapPoint();
 
         Eigen::Vector3d position = mp->GetPosition();
 
@@ -515,7 +514,7 @@ void LoopClosing::maintenance()
 
     /* We use the Rt of the keyframes that may be in use by the Local BA before the closure
      * to calculate the optimization that lba has introduce while we where optimizing the graph (very time consuming) */
-    vector<Eigen::Isometry3d,Eigen::aligned_allocator<Eigen::Isometry3d> > lba_kfs_before_lc;
+    std::aligned_vector<Eigen::Isometry3d> lba_kfs_before_lc;
 
     list<sptam::Map::SharedKeyFrame> considered_keyframes;
 

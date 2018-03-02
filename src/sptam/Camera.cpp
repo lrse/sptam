@@ -41,24 +41,14 @@ inline FrustumCulling computeFrustum(const CameraPose& pose, const CameraParamet
   );
 }
 
-inline cv::Matx34d computeTransformation(const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation)
+inline Eigen::Matrix34d computeTransformation(const CameraPose& pose)
 {
-  // R = O'
-  const Eigen::Matrix3d rotationMatrix = orientation.transpose();
-
-  // t = -R * C where C is the camera position
-  const Eigen::Vector3d translation = -rotationMatrix * position;
-
-  return cv::Matx34d(
-    rotationMatrix(0, 0), rotationMatrix(0, 1), rotationMatrix(0, 2), translation[0],
-    rotationMatrix(1, 0), rotationMatrix(1, 1), rotationMatrix(1, 2), translation[1],
-    rotationMatrix(2, 0), rotationMatrix(2, 1), rotationMatrix(2, 2), translation[2]
-  );
+  return inverseTransformation( computeTransformation(pose.GetOrientationMatrix(), pose.GetPosition()) );
 }
 
 Camera::Camera(const CameraPose& pose, const CameraParameters& calibration)
   : pose_( pose ), calibration_( calibration )
-  , transformation_( computeTransformation( pose_.GetPosition(), pose_.GetOrientationMatrix() ) )
+  , transformation_( computeTransformation( pose ) )
   , projection_( calibration_.intrinsic() * transformation_ )
   , frustum_( computeFrustum( pose, calibration ) )
 {}
@@ -68,7 +58,7 @@ void Camera::UpdatePose(const CameraPose& newPose)
   pose_ = newPose;
 
   frustum_ = computeFrustum( pose_, calibration_ );
-  transformation_ = computeTransformation( pose_.GetPosition(), pose_.GetOrientationMatrix() );
+  transformation_ = computeTransformation( newPose );
   projection_ = calibration_.intrinsic() * transformation_;
 }
 

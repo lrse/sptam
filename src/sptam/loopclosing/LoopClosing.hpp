@@ -30,7 +30,6 @@
  * Faculty of Exact and Natural Sciences
  * University of Buenos Aires
  */
-
 #pragma once
 
 #include <thread>
@@ -39,12 +38,12 @@
 
 // Eigen
 #include <Eigen/Core>
-#include <Eigen/StdVector>
 
 #include "LCDetector.hpp"
 #include "../Map.hpp"
 #include "../CameraParameters.hpp"
 #include "../utils/concurrent_queue.hpp"
+#include "../utils/eigen_alignment.hpp"
 
 // Forward declarations due to cross reference between sptam, loopclosing and mapmaker
 class SPTAM;
@@ -85,7 +84,7 @@ class LoopClosing
 
     Parameters params_;
 
-    std::vector<std::tuple<size_t, size_t, Eigen::Isometry3d>, Eigen::aligned_allocator<std::tuple<size_t, size_t, Eigen::Isometry3d>>> loop_frames_;
+    std::aligned_vector<std::tuple<size_t, size_t, Eigen::Isometry3d>> loop_frames_;
 
     concurrent_queue<sptam::Map::SharedKeyFrame> keyFrameQueue_;
     
