@@ -103,6 +103,12 @@ To install ROS (Kinetic) use the following command:
 
 `sudo apt-get install ros-kinetic-desktop`
 
+## SuiteSparse
+
+Suitespare is a dependency, so it needs to be installed
+
+`sudo apt-get install libsuitesparse-dev`
+
 ## ros-utils
 
 Install our [ros-utils](https://github.com/lrse/ros-utils) library from the source code provided in  
@@ -118,6 +124,13 @@ Install [g2o](https://github.com/RainerKuemmerle/g2o) library from the source co
 Tested until commit [4b9c2f5b68d14ad479457b18c5a2a0bce1541a90](https://github.com/RainerKuemmerle/g2o/commit/4b9c2f5b68d14ad479457b18c5a2a0bce1541a90)
 
 `git checkout 4b9c2f5b68d14ad479457b18c5a2a0bce1541a90`
+
+```
+mkdir build && cd build
+cmake ..
+make 
+sudo make install
+```
 
 ## Loop Closure dependencies
 
